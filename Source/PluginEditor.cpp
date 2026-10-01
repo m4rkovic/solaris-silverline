@@ -6,8 +6,10 @@ SolarisSilverlineAudioProcessorEditor::SolarisSilverlineAudioProcessorEditor(
     : AudioProcessorEditor(&p),
       processor(p),
       globalStrip(p),
+      preFxPanel(p.getValueTreeState(), false),
       ampPanel(p),
       cabPanel(p),
+      postFxPanel(p.getValueTreeState(), true),
       eqPanel(p.getValueTreeState()),
       tooltipWindow(this, 650)
 {

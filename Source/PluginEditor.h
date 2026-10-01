@@ -29,10 +29,10 @@ private:
 
     solaris::ui::NavigationBar navigation;
     solaris::ui::GlobalStrip globalStrip;
-    solaris::ui::PedalBoardPanel preFxPanel { false };
+    solaris::ui::PedalBoardPanel preFxPanel;
     solaris::ui::AmpPanel ampPanel;
     solaris::ui::CabPanel cabPanel;
-    solaris::ui::PedalBoardPanel postFxPanel { true };
+    solaris::ui::PedalBoardPanel postFxPanel;
     solaris::ui::EqPanel eqPanel;
     solaris::ui::TunerOverlay tunerOverlay;
 

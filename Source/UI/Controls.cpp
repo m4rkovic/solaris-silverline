@@ -37,25 +37,26 @@ namespace solaris::ui
             fill = Theme::raised().brighter(0.08f);
         if (down)
             fill = Theme::raised().darker(0.12f);
-        if (active)
+        const auto lit = active || getToggleState();
+        if (lit)
             fill = Theme::raised().brighter(0.11f);
 
         g.setColour(fill);
         g.fillRoundedRectangle(r, radius);
 
-        g.setColour(active ? Theme::amber().withAlpha(0.9f)
-                           : Theme::border().withAlpha(highlighted ? 0.9f : 0.55f));
+        g.setColour(lit ? Theme::amber().withAlpha(0.9f)
+                        : Theme::border().withAlpha(highlighted ? 0.9f : 0.55f));
         g.drawRoundedRectangle(r, radius, active ? 1.2f : 0.8f);
 
-        if (active && accentWhenActive)
+        if (lit && accentWhenActive)
         {
             g.setColour(Theme::amber());
             auto line = r.removeFromBottom(2.0f).reduced(r.getWidth() * 0.25f, 0.0f);
             g.fillRoundedRectangle(line, 1.0f);
         }
 
-        g.setColour(active ? Theme::text() : Theme::textMuted());
-        g.setFont(juce::FontOptions(12.0f, active ? juce::Font::bold : juce::Font::plain));
+        g.setColour(lit ? Theme::text() : Theme::textMuted());
+        g.setFont(juce::FontOptions(12.0f, lit ? juce::Font::bold : juce::Font::plain));
         g.drawFittedText(text, getLocalBounds().reduced(8, 2),
                          juce::Justification::centred, 1, 0.8f);
     }
