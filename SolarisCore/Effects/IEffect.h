@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <cmath>
 
 namespace solaris
 {
@@ -103,8 +104,8 @@ namespace solaris
 
             captureAlignedDry(buffer, numChannels, numSamples);
 
-            const auto fullyBypassed = bypassMix.getCurrentValue() == 0.0f
-                                    && bypassMix.getTargetValue() == 0.0f;
+            const auto fullyBypassed = std::abs(bypassMix.getCurrentValue()) <= 1.0e-7f
+                                    && std::abs(bypassMix.getTargetValue()) <= 1.0e-7f;
 
             if (!fullyBypassed)
                 processEffect(buffer);
