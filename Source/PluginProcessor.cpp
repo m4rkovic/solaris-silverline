@@ -29,6 +29,19 @@ SolarisSilverlineAudioProcessor::SolarisSilverlineAudioProcessor()
     ampRegistry.select("silverline68");
 
     cabinetEngine.setCabinetModelId("silverline-2x10");
+
+    preFxChain.addEffect(preCompressor);
+    preFxChain.addEffect(preOverdrive);
+    preFxChain.addEffect(preDistortion);
+    preFxChain.addEffect(preHardClip);
+    preFxChain.addEffect(preFuzz);
+
+    postFxChain.addEffect(postPhaser);
+    postFxChain.addEffect(postChorus);
+    postFxChain.addEffect(postTremolo);
+    postFxChain.addEffect(postDelay);
+    postFxChain.addEffect(postReverb);
+
     cacheParameterPointers();
 }
 
@@ -44,6 +57,50 @@ void SolarisSilverlineAudioProcessor::cacheParameterPointers()
     ampReverbParameter = parameters.getRawParameterValue(solaris::ParameterIDs::ampReverb);
     ampTremoloSpeedParameter = parameters.getRawParameterValue(solaris::ParameterIDs::ampTremoloSpeed);
     ampTremoloIntensityParameter = parameters.getRawParameterValue(solaris::ParameterIDs::ampTremoloIntensity);
+
+    const auto cachePedal = [this](PedalPointers& target,
+                                  const char* enabled,
+                                  const char* first,
+                                  const char* second,
+                                  const char* third)
+    {
+        target.enabled = parameters.getRawParameterValue(enabled);
+        target.first = parameters.getRawParameterValue(first);
+        target.second = parameters.getRawParameterValue(second);
+        target.third = parameters.getRawParameterValue(third);
+    };
+
+    cachePedal(prePedalParameters[0], solaris::ParameterIDs::preCompEnabled,
+               solaris::ParameterIDs::preCompSustain, solaris::ParameterIDs::preCompAttack,
+               solaris::ParameterIDs::preCompLevel);
+    cachePedal(prePedalParameters[1], solaris::ParameterIDs::preDriveEnabled,
+               solaris::ParameterIDs::preDriveDrive, solaris::ParameterIDs::preDriveTone,
+               solaris::ParameterIDs::preDriveLevel);
+    cachePedal(prePedalParameters[2], solaris::ParameterIDs::preDistEnabled,
+               solaris::ParameterIDs::preDistGain, solaris::ParameterIDs::preDistContour,
+               solaris::ParameterIDs::preDistLevel);
+    cachePedal(prePedalParameters[3], solaris::ParameterIDs::preHardEnabled,
+               solaris::ParameterIDs::preHardDistortion, solaris::ParameterIDs::preHardFilter,
+               solaris::ParameterIDs::preHardLevel);
+    cachePedal(prePedalParameters[4], solaris::ParameterIDs::preFuzzEnabled,
+               solaris::ParameterIDs::preFuzzSustain, solaris::ParameterIDs::preFuzzTone,
+               solaris::ParameterIDs::preFuzzLevel);
+
+    cachePedal(postPedalParameters[0], solaris::ParameterIDs::postPhaserEnabled,
+               solaris::ParameterIDs::postPhaserRate, solaris::ParameterIDs::postPhaserDepth,
+               solaris::ParameterIDs::postPhaserMix);
+    cachePedal(postPedalParameters[1], solaris::ParameterIDs::postChorusEnabled,
+               solaris::ParameterIDs::postChorusRate, solaris::ParameterIDs::postChorusDepth,
+               solaris::ParameterIDs::postChorusMix);
+    cachePedal(postPedalParameters[2], solaris::ParameterIDs::postTremoloEnabled,
+               solaris::ParameterIDs::postTremoloRate, solaris::ParameterIDs::postTremoloDepth,
+               solaris::ParameterIDs::postTremoloShape);
+    cachePedal(postPedalParameters[3], solaris::ParameterIDs::postDelayEnabled,
+               solaris::ParameterIDs::postDelayTime, solaris::ParameterIDs::postDelayFeedback,
+               solaris::ParameterIDs::postDelayMix);
+    cachePedal(postPedalParameters[4], solaris::ParameterIDs::postReverbEnabled,
+               solaris::ParameterIDs::postReverbDecay, solaris::ParameterIDs::postReverbTone,
+               solaris::ParameterIDs::postReverbMix);
 
     cabWetParameter = parameters.getRawParameterValue("cabWet");
     cabMicBlendParameter = parameters.getRawParameterValue("cabMicBlend");
@@ -78,7 +135,15 @@ void SolarisSilverlineAudioProcessor::prepareToPlay(double sampleRate, int sampl
     inputGainStage.setRampDurationSeconds(0.020);
     inputGainStage.setGainDecibels(loadParameter(inputGainParameter));
 
-    preFxStage.prepare(dspSpec);
+    const solaris::EffectPrepareSpec effectSpec {
+        sampleRate,
+        static_cast<juce::uint32>(samplesPerBlock),
+        channels
+    };
+
+    preFxChain.prepare(effectSpec);
+    postFxChain.prepare(effectSpec);
+    syncEffectParameters();
 
     lastAmpSpec.sampleRate = sampleRate;
     lastAmpSpec.maximumBlockSize = static_cast<juce::uint32>(samplesPerBlock);
@@ -89,8 +154,6 @@ void SolarisSilverlineAudioProcessor::prepareToPlay(double sampleRate, int sampl
     cabinetEngine.prepare(dspSpec);
     syncCabParameters();
 
-    postFxStage.prepare(dspSpec);
-
     postEq.prepare(sampleRate);
     syncPostEqParameters();
 
@@ -100,7 +163,9 @@ void SolarisSilverlineAudioProcessor::prepareToPlay(double sampleRate, int sampl
     outputGainStage.setRampDurationSeconds(0.020);
     outputGainStage.setGainDecibels(loadParameter(outputGainParameter));
 
-    setLatencySamples(cabinetEngine.getLatencySamples());
+    setLatencySamples(cabinetEngine.getLatencySamples()
+                      + preFxChain.latencySamples()
+                      + postFxChain.latencySamples());
     prepared = true;
 }
 
@@ -109,10 +174,10 @@ void SolarisSilverlineAudioProcessor::releaseResources()
     prepared = false;
     tunerEngine.stop();
     inputGainStage.reset();
-    preFxStage.reset();
+    preFxChain.reset();
     ampRegistry.reset();
     cabinetEngine.reset();
-    postFxStage.reset();
+    postFxChain.reset();
     postEq.reset();
     outputGainStage.reset();
 }
@@ -153,6 +218,64 @@ void SolarisSilverlineAudioProcessor::syncCabParameters() noexcept
                                    loadBool(cabPhaseBParameter, false));
 }
 
+void SolarisSilverlineAudioProcessor::syncEffectParameters() noexcept
+{
+    const auto normalized = [](const std::atomic<float>* value, float fallback = 5.0f) noexcept
+    {
+        return juce::jlimit(0.0f, 1.0f, loadParameter(value, fallback) * 0.1f);
+    };
+
+    preCompressor.setBypassed(!loadBool(prePedalParameters[0].enabled));
+    preCompressor.setSustain(normalized(prePedalParameters[0].first, 4.5f));
+    preCompressor.setAttack(normalized(prePedalParameters[0].second, 3.5f));
+    preCompressor.setLevel(normalized(prePedalParameters[0].third, 5.0f));
+
+    preOverdrive.setBypassed(!loadBool(prePedalParameters[1].enabled));
+    preOverdrive.setDrive(normalized(prePedalParameters[1].first, 3.5f));
+    preOverdrive.setTone(normalized(prePedalParameters[1].second, 5.0f));
+    preOverdrive.setLevel(normalized(prePedalParameters[1].third, 5.0f));
+
+    preDistortion.setBypassed(!loadBool(prePedalParameters[2].enabled));
+    preDistortion.setGain(normalized(prePedalParameters[2].first, 4.5f));
+    preDistortion.setContour(normalized(prePedalParameters[2].second, 5.0f));
+    preDistortion.setLevel(normalized(prePedalParameters[2].third, 5.0f));
+
+    preHardClip.setBypassed(!loadBool(prePedalParameters[3].enabled));
+    preHardClip.setDistortion(normalized(prePedalParameters[3].first, 4.5f));
+    preHardClip.setFilter(normalized(prePedalParameters[3].second, 4.5f));
+    preHardClip.setLevel(normalized(prePedalParameters[3].third, 5.0f));
+
+    preFuzz.setBypassed(!loadBool(prePedalParameters[4].enabled));
+    preFuzz.setSustain(normalized(prePedalParameters[4].first, 5.5f));
+    preFuzz.setTone(normalized(prePedalParameters[4].second, 5.0f));
+    preFuzz.setLevel(normalized(prePedalParameters[4].third, 5.0f));
+
+    postPhaser.setBypassed(!loadBool(postPedalParameters[0].enabled));
+    postPhaser.setRate(normalized(postPedalParameters[0].first, 3.5f));
+    postPhaser.setDepth(normalized(postPedalParameters[0].second, 5.5f));
+    postPhaser.setMix(normalized(postPedalParameters[0].third, 5.0f));
+
+    postChorus.setBypassed(!loadBool(postPedalParameters[1].enabled));
+    postChorus.setRate(normalized(postPedalParameters[1].first, 3.5f));
+    postChorus.setDepth(normalized(postPedalParameters[1].second, 4.5f));
+    postChorus.setMix(normalized(postPedalParameters[1].third, 4.5f));
+
+    postTremolo.setBypassed(!loadBool(postPedalParameters[2].enabled));
+    postTremolo.setRate(normalized(postPedalParameters[2].first, 3.5f));
+    postTremolo.setDepth(normalized(postPedalParameters[2].second, 4.5f));
+    postTremolo.setShape(normalized(postPedalParameters[2].third, 2.5f));
+
+    postDelay.setBypassed(!loadBool(postPedalParameters[3].enabled));
+    postDelay.setTime(normalized(postPedalParameters[3].first, 3.8f));
+    postDelay.setFeedback(normalized(postPedalParameters[3].second, 3.5f));
+    postDelay.setMix(normalized(postPedalParameters[3].third, 3.2f));
+
+    postReverb.setBypassed(!loadBool(postPedalParameters[4].enabled));
+    postReverb.setDecay(normalized(postPedalParameters[4].first, 4.6f));
+    postReverb.setTone(normalized(postPedalParameters[4].second, 5.2f));
+    postReverb.setMix(normalized(postPedalParameters[4].third, 2.8f));
+}
+
 void SolarisSilverlineAudioProcessor::syncPostEqParameters() noexcept
 {
     postEq.setHighPass(loadParameter(eqHpfFrequencyParameter, 70.0f),
@@ -185,16 +308,17 @@ void SolarisSilverlineAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     outputGainStage.setGainDecibels(loadParameter(outputGainParameter));
     ampRegistry.setParameters(readAmpParameters());
     syncCabParameters();
+    syncEffectParameters();
     syncPostEqParameters();
 
     juce::dsp::AudioBlock<float> block(buffer);
     juce::dsp::ProcessContextReplacing<float> context(block);
 
     inputGainStage.process(context);
-    preFxStage.process(buffer);
+    preFxChain.process(buffer);
     ampRegistry.process(buffer);
     cabinetEngine.process(buffer);
-    postFxStage.process(buffer);
+    postFxChain.process(buffer);
     postEq.process(buffer);
     outputGainStage.process(context);
 
@@ -256,16 +380,21 @@ juce::AudioProcessorEditor* SolarisSilverlineAudioProcessor::createEditor()
 
 double SolarisSilverlineAudioProcessor::getTailLengthSeconds() const
 {
-    return ampRegistry.tailLengthSeconds();
+    return ampRegistry.tailLengthSeconds() + postFxChain.tailLengthSeconds();
 }
 
 void SolarisSilverlineAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
+    juce::ValueTree pedalState("PEDALS");
+    pedalState.addChild(preFxChain.createState("PRE"), -1, nullptr);
+    pedalState.addChild(postFxChain.createState("POST"), -1, nullptr);
+
     const auto state = solaris::PresetState::create(
         parameters,
         getActiveAmpModelId(),
         cabinetEngine.createState(),
-        postEq.createState());
+        postEq.createState(),
+        pedalState);
 
     if (auto xml = state.createXml())
         copyXmlToBinary(*xml, destData);
@@ -290,6 +419,13 @@ void SolarisSilverlineAudioProcessor::setStateInformation(const void* data, int 
         cabinetEngine.restoreState(solaris::PresetState::cabinetState(state));
         postEq.restoreState(solaris::PresetState::eqState(state));
 
+        const auto pedalState = solaris::PresetState::pedalState(state);
+        if (pedalState.isValid())
+        {
+            preFxChain.restoreState(pedalState.getChildWithName("PRE"));
+            postFxChain.restoreState(pedalState.getChildWithName("POST"));
+        }
+
         const auto requestedAmp = solaris::PresetState::ampModelId(state);
         if (requestedAmp == "neural-nam")
         {
@@ -304,6 +440,7 @@ void SolarisSilverlineAudioProcessor::setStateInformation(const void* data, int 
         }
 
         syncCabParameters();
+        syncEffectParameters();
         syncPostEqParameters();
     }
 }
@@ -346,6 +483,74 @@ SolarisSilverlineAudioProcessor::createParameterLayout()
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID{solaris::ParameterIDs::ampTremoloIntensity, 1}, "Tremolo Intensity",
         juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, 0.0f));
+
+
+    const auto addPedal = [&params](const char* enabledId,
+                                    const juce::String& displayName,
+                                    const char* firstId,
+                                    const juce::String& firstName,
+                                    float firstDefault,
+                                    const char* secondId,
+                                    const juce::String& secondName,
+                                    float secondDefault,
+                                    const char* thirdId,
+                                    const juce::String& thirdName,
+                                    float thirdDefault)
+    {
+        params.push_back(std::make_unique<juce::AudioParameterBool>(
+            juce::ParameterID{enabledId, 1}, displayName + " Enabled", false));
+        params.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID{firstId, 1}, displayName + " " + firstName,
+            juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, firstDefault));
+        params.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID{secondId, 1}, displayName + " " + secondName,
+            juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, secondDefault));
+        params.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID{thirdId, 1}, displayName + " " + thirdName,
+            juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, thirdDefault));
+    };
+
+    addPedal(solaris::ParameterIDs::preCompEnabled, "Leveler",
+             solaris::ParameterIDs::preCompSustain, "Sustain", 4.5f,
+             solaris::ParameterIDs::preCompAttack, "Attack", 3.5f,
+             solaris::ParameterIDs::preCompLevel, "Level", 5.0f);
+    addPedal(solaris::ParameterIDs::preDriveEnabled, "Turbo Drive",
+             solaris::ParameterIDs::preDriveDrive, "Drive", 3.5f,
+             solaris::ParameterIDs::preDriveTone, "Tone", 5.0f,
+             solaris::ParameterIDs::preDriveLevel, "Level", 5.0f);
+    addPedal(solaris::ParameterIDs::preDistEnabled, "Badland Dist",
+             solaris::ParameterIDs::preDistGain, "Gain", 4.5f,
+             solaris::ParameterIDs::preDistContour, "Contour", 5.0f,
+             solaris::ParameterIDs::preDistLevel, "Level", 5.0f);
+    addPedal(solaris::ParameterIDs::preHardEnabled, "Vermin Drive",
+             solaris::ParameterIDs::preHardDistortion, "Distortion", 4.5f,
+             solaris::ParameterIDs::preHardFilter, "Filter", 4.5f,
+             solaris::ParameterIDs::preHardLevel, "Level", 5.0f);
+    addPedal(solaris::ParameterIDs::preFuzzEnabled, "Void Fuzz",
+             solaris::ParameterIDs::preFuzzSustain, "Sustain", 5.5f,
+             solaris::ParameterIDs::preFuzzTone, "Tone", 5.0f,
+             solaris::ParameterIDs::preFuzzLevel, "Level", 5.0f);
+
+    addPedal(solaris::ParameterIDs::postPhaserEnabled, "Orbit",
+             solaris::ParameterIDs::postPhaserRate, "Rate", 3.5f,
+             solaris::ParameterIDs::postPhaserDepth, "Depth", 5.5f,
+             solaris::ParameterIDs::postPhaserMix, "Mix", 5.0f);
+    addPedal(solaris::ParameterIDs::postChorusEnabled, "Chorus",
+             solaris::ParameterIDs::postChorusRate, "Rate", 3.5f,
+             solaris::ParameterIDs::postChorusDepth, "Depth", 4.5f,
+             solaris::ParameterIDs::postChorusMix, "Mix", 4.5f);
+    addPedal(solaris::ParameterIDs::postTremoloEnabled, "Pulse",
+             solaris::ParameterIDs::postTremoloRate, "Rate", 3.5f,
+             solaris::ParameterIDs::postTremoloDepth, "Depth", 4.5f,
+             solaris::ParameterIDs::postTremoloShape, "Shape", 2.5f);
+    addPedal(solaris::ParameterIDs::postDelayEnabled, "Echo 404",
+             solaris::ParameterIDs::postDelayTime, "Time", 3.8f,
+             solaris::ParameterIDs::postDelayFeedback, "Regeneration", 3.5f,
+             solaris::ParameterIDs::postDelayMix, "Mix", 3.2f);
+    addPedal(solaris::ParameterIDs::postReverbEnabled, "Sanctum",
+             solaris::ParameterIDs::postReverbDecay, "Decay", 4.6f,
+             solaris::ParameterIDs::postReverbTone, "Tone", 5.2f,
+             solaris::ParameterIDs::postReverbMix, "Mix", 2.8f);
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID{"cabWet", 1}, "Cab Wet",
