@@ -2,8 +2,14 @@
 
 #if SOLARIS_ENABLE_NEURAL_AUDIO
 #include <NeuralAudio/NeuralModel.h>
+#include <dsp/ResamplingContainer/ResamplingContainer.h>
 #else
 namespace NeuralAudio { class NeuralModel {}; }
+namespace dsp
+{
+    template <typename T, int NCHANS, std::size_t A>
+    class ResamplingContainer {};
+}
 #endif
 
 #include <cmath>
@@ -13,6 +19,20 @@ namespace NeuralAudio { class NeuralModel {}; }
 
 namespace solaris
 {
+    namespace
+    {
+        int modelBlockCapacity(std::size_t hostBlockSize,
+                               double hostSampleRate,
+                               double modelSampleRate) noexcept
+        {
+            const auto hostRate = juce::jmax(1.0, hostSampleRate);
+            const auto modelRate = juce::jmax(1.0, modelSampleRate);
+            const auto scaled = std::ceil(static_cast<double>(hostBlockSize)
+                                          * modelRate / hostRate);
+            return juce::jmax(1, static_cast<int>(scaled) + 16);
+        }
+    }
+
     AmpMetadata NeuralAmpModel::staticMetadata()
     {
         return { "neural-nam", "Neural NAM", "NeuralAudio / Neural Amp Modeler" };
@@ -23,12 +43,10 @@ namespace solaris
 
     void NeuralAmpModel::prepare(const AmpPrepareSpec& spec)
     {
-        const auto nextSampleRate = juce::jmax(1.0, spec.sampleRate);
-        const auto hostRateChanged = loadedForHostSampleRate > 0.0
-            && std::abs(loadedForHostSampleRate - nextSampleRate) > 1.0;
+        sampleRate = juce::jmax(1.0, spec.sampleRate);
+        maximumBlockSize = juce::jmax<std::size_t>(
+            1u, static_cast<std::size_t>(spec.maximumBlockSize));
 
-        sampleRate = nextSampleRate;
-        maximumBlockSize = juce::jmax<std::size_t>(1u, static_cast<std::size_t>(spec.maximumBlockSize));
         inputScratch.setSize(1, static_cast<int>(maximumBlockSize), false, false, true);
         outputScratch.setSize(1, static_cast<int>(maximumBlockSize), false, false, true);
 
@@ -36,15 +54,24 @@ namespace solaris
         enabledMix.setCurrentAndTargetValue(currentParameters.enabled ? 1.0f : 0.0f);
 
        #if SOLARIS_ENABLE_NEURAL_AUDIO
-        if (hostRateChanged && model != nullptr)
+        resampler.reset();
+        resamplerLatency = 0;
+
+        if (model != nullptr)
         {
-            model.reset();
-            loadedForHostSampleRate = 0.0;
-            loadError = "NAM needs to be reloaded for the new host sample rate.";
-        }
-        else if (model != nullptr)
-        {
-            model->SetMaxAudioBufferSize(static_cast<int>(maximumBlockSize));
+            model->SetMaxAudioBufferSize(
+                modelBlockCapacity(maximumBlockSize, sampleRate, nativeModelSampleRate));
+
+            if (std::abs(nativeModelSampleRate - sampleRate) > 1.0)
+            {
+                resampler = std::make_unique<dsp::ResamplingContainer<float, 1, 12>>(
+                    nativeModelSampleRate);
+                resampler->Reset(sampleRate, static_cast<int>(maximumBlockSize));
+                resamplerLatency = resampler->GetLatency();
+            }
+
+            loadedMetadata.effectiveSampleRate = sampleRate;
+            loadedMetadata.sampleRateMode = resampler != nullptr ? "lanczos-src" : "native";
         }
        #endif
 
@@ -83,46 +110,59 @@ namespace solaris
         {
             const auto path = std::filesystem::path(modelFile.getFullPathName().toStdString());
 
-            // Inspect only enough JSON to decide whether the pinned NeuralAudio
-            // backend can honour the host rate without a separate realtime SRC.
             std::ifstream metadataStream(path, std::ifstream::binary);
-            nlohmann::json modelJson;
-            metadataStream >> modelJson;
-
-            const auto architecture = modelJson.value("architecture", std::string {});
-            const auto sourceRate = modelJson.contains("sample_rate") && modelJson.at("sample_rate").is_number()
-                ? modelJson.at("sample_rate").get<double>()
-                : 48000.0;
-
-            const auto hostRate = static_cast<int>(std::lround(sampleRate));
-            const auto modelRate = static_cast<int>(std::lround(sourceRate));
-            const auto exactRate = std::abs(sourceRate - sampleRate) <= 1.0;
-            const auto waveNetIntegerMultiple =
-                architecture == "WaveNet"
-                && modelRate > 0
-                && hostRate >= modelRate
-                && (hostRate % modelRate) == 0;
-
-            if (!exactRate && !waveNetIntegerMultiple)
+            if (!metadataStream.good())
             {
-                loadError = "NAM model rate is "
-                    + juce::String(sourceRate, 0)
-                    + " Hz and the host is "
-                    + juce::String(sampleRate, 0)
-                    + " Hz. This architecture has no supported load-time rate adaptation; general realtime SRC is intentionally disabled.";
+                loadError = "NAM file could not be opened.";
                 return false;
             }
 
+            nlohmann::json modelJson;
+            metadataStream >> modelJson;
+
+            // Old NAM files did not always declare a rate. The reference NAM plug-in
+            // makes the same 48 kHz assumption for those captures.
+            const auto sourceRate = modelJson.contains("sample_rate")
+                                 && modelJson.at("sample_rate").is_number()
+                ? modelJson.at("sample_rate").get<double>()
+                : 48000.0;
+
+            if (sourceRate < 8000.0 || sourceRate > 384000.0)
+            {
+                loadError = "NAM reports an invalid model sample rate.";
+                return false;
+            }
+
+            const auto nativeRate = static_cast<int>(std::lround(sourceRate));
+            const auto internalCapacity =
+                modelBlockCapacity(maximumBlockSize, sampleRate, sourceRate);
+
             NeuralAudio::NeuralModelLoader loader;
-            loader.SetExternalSampleRate(hostRate);
-            loader.SetDefaultMaxAudioBufferSize(static_cast<int>(maximumBlockSize));
+
+            // Keep the neural model at its native capture rate. Any host/model
+            // mismatch is handled by the same style of realtime Lanczos wrapper
+            // used by the official Neural Amp Modeler plug-in, rather than by
+            // running a model at the wrong rate or simply resampling its output.
+            loader.SetExternalSampleRate(nativeRate);
+            loader.SetDefaultMaxAudioBufferSize(internalCapacity);
             loader.SetAudioInputLevelDBu(12.0f);
 
-            std::unique_ptr<NeuralAudio::NeuralModel> loaded(loader.CreateFromFile(path, true));
+            std::unique_ptr<NeuralAudio::NeuralModel> loaded(
+                loader.CreateFromFile(path, true));
             if (loaded == nullptr)
             {
                 loadError = "NeuralAudio could not construct this NAM model.";
                 return false;
+            }
+
+            std::unique_ptr<dsp::ResamplingContainer<float, 1, 12>> loadedResampler;
+            int loadedResamplerLatency = 0;
+            if (std::abs(sourceRate - sampleRate) > 1.0)
+            {
+                loadedResampler =
+                    std::make_unique<dsp::ResamplingContainer<float, 1, 12>>(sourceRate);
+                loadedResampler->Reset(sampleRate, static_cast<int>(maximumBlockSize));
+                loadedResamplerLatency = loadedResampler->GetLatency();
             }
 
             NeuralModelMetadata metadata;
@@ -136,18 +176,25 @@ namespace solaris
             metadata.displayName = loaded->GetMetadata("name");
             metadata.modelSampleRate = sourceRate;
             metadata.effectiveSampleRate = sampleRate;
-            metadata.sampleRateMode = exactRate ? "native" : "wavenet-integer-multiple";
+            metadata.sampleRateMode = loadedResampler != nullptr ? "lanczos-src" : "native";
             metadata.receptiveFieldSamples = loaded->GetReceptiveFieldSize();
 
             if (metadata.displayName.isEmpty())
                 metadata.displayName = modelFile.getFileNameWithoutExtension();
 
-            inputGain = juce::Decibels::decibelsToGain(loaded->GetRecommendedInputDBAdjustment());
-            outputGain = juce::Decibels::decibelsToGain(loaded->GetRecommendedOutputDBAdjustment());
+            const auto recommendedInput =
+                juce::jlimit(-24.0f, 24.0f, loaded->GetRecommendedInputDBAdjustment());
+            const auto recommendedOutput =
+                juce::jlimit(-36.0f, 36.0f, loaded->GetRecommendedOutputDBAdjustment());
+
+            inputGain = juce::Decibels::decibelsToGain(recommendedInput);
+            outputGain = juce::Decibels::decibelsToGain(recommendedOutput);
 
             model = std::move(loaded);
+            resampler = std::move(loadedResampler);
+            resamplerLatency = loadedResamplerLatency;
+            nativeModelSampleRate = sourceRate;
             loadedMetadata = std::move(metadata);
-            loadedForHostSampleRate = sampleRate;
             reset();
             return true;
         }
@@ -171,7 +218,8 @@ namespace solaris
 
         const auto numSamples = buffer.getNumSamples();
         const auto numChannels = buffer.getNumChannels();
-        if (numSamples <= 0 || numChannels <= 0 || static_cast<std::size_t>(numSamples) > maximumBlockSize)
+        if (numSamples <= 0 || numChannels <= 0
+            || static_cast<std::size_t>(numSamples) > maximumBlockSize)
             return;
 
         const auto* source = buffer.getReadPointer(0);
@@ -180,7 +228,35 @@ namespace solaris
         juce::FloatVectorOperations::multiply(modelInput, source, inputGain, numSamples);
 
        #if SOLARIS_ENABLE_NEURAL_AUDIO
-        model->Process(modelInput, modelOutput, static_cast<std::size_t>(numSamples));
+        if (resampler != nullptr)
+        {
+            float* inputPointers[] { modelInput };
+            float* outputPointers[] { modelOutput };
+
+            try
+            {
+                resampler->ProcessBlock(
+                    inputPointers,
+                    outputPointers,
+                    numSamples,
+                    [this](float** input, float** output, int frames)
+                    {
+                        model->Process(input[0], output[0],
+                                       static_cast<std::size_t>(frames));
+                    });
+            }
+            catch (...)
+            {
+                // Audio callbacks are noexcept. A defensive dry fallback is much
+                // safer than terminating the host if an SRC invariant is violated.
+                juce::FloatVectorOperations::copy(modelOutput, modelInput, numSamples);
+            }
+        }
+        else
+        {
+            model->Process(modelInput, modelOutput,
+                           static_cast<std::size_t>(numSamples));
+        }
        #endif
 
         for (int sample = 0; sample < numSamples; ++sample)
@@ -200,5 +276,21 @@ namespace solaris
     {
         inputScratch.clear();
         outputScratch.clear();
+
+       #if SOLARIS_ENABLE_NEURAL_AUDIO
+        if (resampler != nullptr)
+        {
+            try
+            {
+                resampler->Reset(sampleRate, static_cast<int>(maximumBlockSize));
+                resamplerLatency = resampler->GetLatency();
+            }
+            catch (...)
+            {
+                resampler.reset();
+                resamplerLatency = 0;
+            }
+        }
+       #endif
     }
 }
