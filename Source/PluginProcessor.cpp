@@ -266,7 +266,7 @@ solaris::AmpParameters SolarisSilverlineAudioProcessor::readAmpParameters() cons
     result.volume = loadParameter(ampVolumeParameter, 4.5f) * 0.1f;
     result.bass = loadParameter(ampBassParameter, 5.0f) * 0.1f;
     result.treble = loadParameter(ampTrebleParameter, 5.5f) * 0.1f;
-    result.reverb = loadParameter(ampReverbParameter, 2.0f) * 0.1f;
+    result.reverb = loadParameter(ampReverbParameter, 0.0f) * 0.1f;
     result.tremoloSpeedHz = loadParameter(ampTremoloSpeedParameter, 4.0f);
     result.tremoloIntensity = loadParameter(ampTremoloIntensityParameter) * 0.1f;
     result.clampToValidRange();
