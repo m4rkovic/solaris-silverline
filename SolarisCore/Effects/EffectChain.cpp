@@ -105,7 +105,8 @@ namespace solaris
     {
         int total = 0;
         for (std::size_t i = 0; i < registeredCount; ++i)
-            total += registered[i]->latencySamples();
+            if (!registered[i]->isBypassed())
+                total += registered[i]->latencySamples();
         return total;
     }
 
