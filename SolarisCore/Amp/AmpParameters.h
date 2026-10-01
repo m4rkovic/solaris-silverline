@@ -16,9 +16,9 @@ namespace solaris
     struct AmpParameters
     {
         bool enabled = true;
-        AmpChannel channel = AmpChannel::custom;
+        AmpChannel channel = AmpChannel::vintage;
 
-        float volume = 0.45f;
+        float volume = 0.30f;
         float bass = 0.5f;
         float treble = 0.55f;
         float reverb = 0.0f;
