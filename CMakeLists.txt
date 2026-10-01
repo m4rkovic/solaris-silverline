@@ -38,6 +38,8 @@ juce_add_plugin(SolarisSilverline
     COPY_PLUGIN_AFTER_BUILD TRUE
 )
 
+juce_generate_juce_header(SolarisSilverline)
+
 target_sources(SolarisSilverline
     PRIVATE
         Source/Parameters.h
