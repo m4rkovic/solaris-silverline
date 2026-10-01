@@ -349,6 +349,18 @@ namespace solaris
                 continue;
             }
 
+            if (slot == CabinetIRSlot::micA
+                && path == "factory://open-back-1x12")
+            {
+                {
+                    const juce::ScopedLock lock(metadataLock);
+                    statusA = {};
+                }
+                setSlotActive(slot, false);
+                loadFactoryFallbackIfEmpty();
+                continue;
+            }
+
             const auto file = juce::File(path);
             const auto result = loadImpulseResponseFromFile(slot, file);
             if (result.failed())
