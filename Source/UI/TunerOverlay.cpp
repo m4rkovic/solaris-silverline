@@ -1,4 +1,5 @@
-#include "TunerOverlay.h"\n#include <cmath>
+#include "TunerOverlay.h"
+#include <cmath>
 
 namespace solaris::ui
 {
