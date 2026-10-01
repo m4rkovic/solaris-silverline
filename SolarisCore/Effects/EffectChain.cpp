@@ -111,9 +111,10 @@ namespace solaris
 
     double EffectChain::tailLengthSeconds() const noexcept
     {
-        double longest = 0.0;
+        // Effects are serial, so conservative host tail reporting sums their tails.
+        double total = 0.0;
         for (std::size_t i = 0; i < registeredCount; ++i)
-            longest = juce::jmax(longest, registered[i]->tailLengthSeconds());
-        return longest;
+            total += registered[i]->tailLengthSeconds();
+        return total;
     }
 }
