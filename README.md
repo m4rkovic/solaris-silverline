@@ -44,19 +44,32 @@ Persistent utilities:
 - Draggable bands
 - Spectrum analyzer
 
-## What works in v0.1
+## What works in v0.2 DSP prototype
 
 - VST3 target
 - Standalone target
 - CMake project
 - JUCE fetched automatically
 - Resizable placeholder GUI
-- Modular amp interface and registry
-- Silverline 68 placeholder model
-- Audio passthrough
-- Plugin state skeleton
+- Factory-driven `IAmpModel` registry
+- Stable normalized amp parameter contract with reserved Mid / Presence / Master fields
+- Fixed real-time signal shell: Input -> PRE FX -> AMP -> CAB -> POST FX -> EQ -> Output
+- Transparent placeholder stages for PRE FX, CAB, POST FX and EQ
+- Silverline 68 non-neural DSP prototype
+- 4x oversampling around nonlinear processing
+- Input conditioning and pre-emphasis
+- Asymmetric preamp saturation
+- Broad passive-style tone shaping
+- Secondary power-stage-like saturation with simple sag response
+- High-frequency anti-fizz filtering before downsampling
+- Smoothed Custom / Vintage voicing
+- Tremolo and spring-inspired multi-tap reverb prototype
+- Smoothed input/output gain and amp controls
+- No allocations, file I/O or mutex locking in `processBlock`
+- Replaceable nonlinear-stage interface for a future neural backend
+- Plugin state serialization through APVTS
 
-The goal of v0.1 is intentionally boring: **build successfully, load in Studio One, pass audio cleanly.**
+The current DSP is intentionally a **non-neural musical prototype**, not a component-level circuit clone. The architecture is set up so a later neural amp stage can replace the analogue nonlinear backend without changing the plugin shell.
 
 ## Requirements
 
@@ -106,10 +119,14 @@ Then rescan plugins in Studio One.
 Solaris Silverline
 │
 ├── Host / Plugin Shell
+│   └── Input -> PRE FX -> AMP -> CAB -> POST FX -> EQ -> Output
 ├── SolarisCore
 │   ├── DSP
 │   ├── Effects
 │   ├── Amp
+│   │   ├── IAmpModel
+│   │   ├── AmpRegistry / factories
+│   │   └── INonlinearAmpStage
 │   ├── Cab
 │   ├── EQ
 │   ├── Tuner
@@ -117,33 +134,30 @@ Solaris Silverline
 │
 └── Silverline
     ├── AmpModels
+    │   ├── Silverline68Amp
+    │   └── Silverline68AnalogueStage
     ├── Pedals
     └── Assets
 ```
 
 `SolarisCore` must stay product-agnostic. Product-specific models/assets belong under `Silverline`.
 
+The intended future Silverline 68 path is:
+
+```text
+analogue front-end DSP -> replaceable nonlinear/neural amp stage -> tone/output DSP
+```
+
+No NAM/RTNeural dependency is required by the current prototype.
+
 ## Next milestones
 
-1. Proper parameter/state architecture
-2. Input/output gain and meters
-3. Tab/navigation visual system
-4. Tuner
-5. Silverline 68 amp engine
-6. Cabinet + convolution
-7. PRE FX
-8. POST FX
-9. Parametric EQ
-10. Preset browser
-11. Performance, validation and release builds
-
-## Git
-
-```powershell
-git init
-git add .
-git commit -m "Initial Solaris Silverline skeleton"
-git branch -M main
-git remote add origin YOUR_GITHUB_REPO_URL
-git push -u origin main
-```
+1. Listening tests and gain-staging calibration with DI guitar references
+2. Cabinet + convolution
+3. PRE FX
+4. POST FX
+5. Parametric EQ
+6. Tuner
+7. Preset browser
+8. Optional neural amp backend evaluation
+9. Performance, regression tests and release builds

@@ -40,13 +40,19 @@ juce_add_plugin(SolarisSilverline
 
 target_sources(SolarisSilverline
     PRIVATE
+        Source/Parameters.h
         Source/PluginProcessor.cpp
         Source/PluginProcessor.h
         Source/PluginEditor.cpp
         Source/PluginEditor.h
+        SolarisCore/DSP/IAudioStage.h
+        SolarisCore/Amp/AmpParameters.h
+        SolarisCore/Amp/INonlinearAmpStage.h
         SolarisCore/Amp/IAmpModel.h
         SolarisCore/Amp/AmpRegistry.h
         SolarisCore/Amp/AmpRegistry.cpp
+        Silverline/AmpModels/Silverline68AnalogueStage.h
+        Silverline/AmpModels/Silverline68AnalogueStage.cpp
         Silverline/AmpModels/Silverline68Amp.h
         Silverline/AmpModels/Silverline68Amp.cpp
 )
@@ -69,15 +75,21 @@ target_link_libraries(SolarisSilverline
         juce::juce_recommended_warning_flags
 )
 
-# Helps Visual Studio users keep source groups tidy.
+# Helps IDE users keep source groups tidy.
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES
+    Source/Parameters.h
     Source/PluginProcessor.cpp
     Source/PluginProcessor.h
     Source/PluginEditor.cpp
     Source/PluginEditor.h
+    SolarisCore/DSP/IAudioStage.h
+    SolarisCore/Amp/AmpParameters.h
+    SolarisCore/Amp/INonlinearAmpStage.h
     SolarisCore/Amp/IAmpModel.h
     SolarisCore/Amp/AmpRegistry.h
     SolarisCore/Amp/AmpRegistry.cpp
+    Silverline/AmpModels/Silverline68AnalogueStage.h
+    Silverline/AmpModels/Silverline68AnalogueStage.cpp
     Silverline/AmpModels/Silverline68Amp.h
     Silverline/AmpModels/Silverline68Amp.cpp
 )

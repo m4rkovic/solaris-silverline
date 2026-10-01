@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AmpParameters.h"
 #include <JuceHeader.h>
 #include <string>
 
@@ -26,7 +27,9 @@ namespace solaris
 
         virtual const AmpMetadata& metadata() const noexcept = 0;
         virtual void prepare(const AmpPrepareSpec& spec) = 0;
+        virtual void setParameters(const AmpParameters& parameters) noexcept = 0;
         virtual void process(juce::AudioBuffer<float>& buffer) noexcept = 0;
         virtual void reset() noexcept = 0;
+        virtual double tailLengthSeconds() const noexcept { return 0.0; }
     };
 }

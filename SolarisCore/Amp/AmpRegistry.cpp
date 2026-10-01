@@ -1,25 +1,33 @@
 #include "AmpRegistry.h"
+#include <utility>
 
 namespace solaris
 {
-    void AmpRegistry::registerModel(std::unique_ptr<IAmpModel> model)
+    void AmpRegistry::registerFactory(AmpMetadata metadata, Factory factory)
     {
-        if (!model)
+        if (!factory)
             return;
 
-        models.push_back(std::move(model));
+        factories.push_back({ std::move(metadata), std::move(factory) });
     }
 
     bool AmpRegistry::select(const std::string& id)
     {
-        for (auto& model : models)
+        for (const auto& entry : factories)
         {
-            if (model->metadata().id == id)
-            {
-                selected = model.get();
-                selected->prepare(lastSpec);
-                return true;
-            }
+            if (entry.metadata.id != id)
+                continue;
+
+            auto next = entry.factory();
+            if (!next)
+                return false;
+
+            if (hasBeenPrepared)
+                next->prepare(lastSpec);
+
+            next->setParameters(lastParameters);
+            selected = std::move(next);
+            return true;
         }
 
         return false;
@@ -28,9 +36,18 @@ namespace solaris
     void AmpRegistry::prepare(const AmpPrepareSpec& spec)
     {
         lastSpec = spec;
+        hasBeenPrepared = true;
 
-        for (auto& model : models)
-            model->prepare(spec);
+        if (selected != nullptr)
+            selected->prepare(spec);
+    }
+
+    void AmpRegistry::setParameters(const AmpParameters& parameters) noexcept
+    {
+        lastParameters = parameters;
+
+        if (selected != nullptr)
+            selected->setParameters(parameters);
     }
 
     void AmpRegistry::process(juce::AudioBuffer<float>& buffer) noexcept
@@ -41,7 +58,12 @@ namespace solaris
 
     void AmpRegistry::reset() noexcept
     {
-        for (auto& model : models)
-            model->reset();
+        if (selected != nullptr)
+            selected->reset();
+    }
+
+    double AmpRegistry::tailLengthSeconds() const noexcept
+    {
+        return selected != nullptr ? selected->tailLengthSeconds() : 0.0;
     }
 }
