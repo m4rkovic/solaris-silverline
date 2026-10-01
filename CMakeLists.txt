@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.24)
 
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION.txt" SOLARIS_VERSION LIMIT_COUNT 1)
 project(SolarisSilverline
-    VERSION 0.3.0
+    VERSION ${SOLARIS_VERSION}
     DESCRIPTION "Solaris Silverline - boutique guitar amplifier suite"
     LANGUAGES C CXX
 )
@@ -14,6 +15,8 @@ option(SOLARIS_COPY_PLUGIN_AFTER_BUILD "Copy plugin to the system plugin directo
 option(SOLARIS_ENABLE_AU "Build Audio Unit format on macOS" OFF)
 option(SOLARIS_ENABLE_NEURAL_AUDIO "Build NeuralAudio/NAM backend" ON)
 option(SOLARIS_BUILD_TESTS "Build Solaris DSP sanity tests" ON)
+option(SOLARIS_BUILD_BENCHMARK "Build offline DSP benchmark harness" ON)
+set(SOLARIS_RELEASE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/dist" CACHE PATH "Deterministic packaged release output directory")
 
 include(FetchContent)
 
@@ -105,14 +108,19 @@ set(SOLARIS_SOURCES
     SolarisCore/Amp/AmpRegistry.cpp
     SolarisCore/Amp/NeuralAmpModel.h
     SolarisCore/Amp/NeuralAmpModel.cpp
+    SolarisCore/Amp/NeuralModelLoadService.h
+    SolarisCore/Amp/NeuralModelLoadService.cpp
     SolarisCore/Cab/CabinetEngine.h
     SolarisCore/Cab/CabinetEngine.cpp
+    SolarisCore/Cab/FactoryIRCatalog.h
     SolarisCore/EQ/ParametricEQ.h
     SolarisCore/EQ/ParametricEQ.cpp
     SolarisCore/Tuner/TunerEngine.h
     SolarisCore/Tuner/TunerEngine.cpp
     SolarisCore/Presets/PresetState.h
     SolarisCore/Presets/PresetState.cpp
+    SolarisCore/Presets/PresetManager.h
+    SolarisCore/Presets/PresetManager.cpp
     Silverline/AmpModels/Silverline68AnalogueStage.h
     Silverline/AmpModels/Silverline68AnalogueStage.cpp
     Silverline/AmpModels/Silverline68Amp.h
@@ -127,11 +135,10 @@ target_compile_definitions(SolarisSilverline
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0
+    PRIVATE
+        SOLARIS_ENABLE_NEURAL_AUDIO=$<BOOL:${SOLARIS_ENABLE_NEURAL_AUDIO}>
+        SOLARIS_VERSION_STRING=\"${PROJECT_VERSION}\"
 )
-
-if(SOLARIS_ENABLE_NEURAL_AUDIO)
-    target_compile_definitions(SolarisSilverline PRIVATE SOLARIS_ENABLE_NEURAL_AUDIO=1)
-endif()
 
 if(MSVC)
     target_compile_options(SolarisSilverline PRIVATE /permissive- /Zc:__cplusplus /utf-8)
@@ -154,12 +161,50 @@ endif()
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOLARIS_SOURCES})
 
+
+if(SOLARIS_BUILD_BENCHMARK)
+    juce_add_console_app(SolarisBenchmark
+        PRODUCT_NAME "SolarisBenchmark"
+    )
+    target_sources(SolarisBenchmark PRIVATE
+        Tests/Benchmark.cpp
+        SolarisCore/Amp/NeuralAmpModel.h
+        SolarisCore/Amp/NeuralAmpModel.cpp
+        Silverline/AmpModels/Silverline68AnalogueStage.h
+        Silverline/AmpModels/Silverline68AnalogueStage.cpp
+        Silverline/AmpModels/Silverline68Amp.h
+        Silverline/AmpModels/Silverline68Amp.cpp
+    )
+    juce_generate_juce_header(SolarisBenchmark)
+    target_include_directories(SolarisBenchmark PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_definitions(SolarisBenchmark PRIVATE
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        SOLARIS_ENABLE_NEURAL_AUDIO=$<BOOL:${SOLARIS_ENABLE_NEURAL_AUDIO}>
+        SOLARIS_VERSION_STRING=\"${PROJECT_VERSION}\"
+    )
+    target_link_libraries(SolarisBenchmark PRIVATE
+        juce::juce_audio_utils
+        juce::juce_dsp
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+    )
+    if(SOLARIS_ENABLE_NEURAL_AUDIO)
+        target_link_libraries(SolarisBenchmark PRIVATE NeuralAudio)
+    endif()
+    if(MSVC)
+        target_compile_options(SolarisBenchmark PRIVATE /permissive- /Zc:__cplusplus /utf-8)
+    endif()
+endif()
+
 if(MSVC)
     set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT SolarisSilverline_Standalone)
 endif()
 
+message(STATUS "Solaris version: ${PROJECT_VERSION}")
 message(STATUS "Solaris formats: ${SOLARIS_PLUGIN_FORMATS}")
 message(STATUS "Solaris NeuralAudio backend: ${SOLARIS_ENABLE_NEURAL_AUDIO}")
+message(STATUS "Solaris release package root: ${SOLARIS_RELEASE_ROOT}")
 
 
 if(SOLARIS_BUILD_TESTS)

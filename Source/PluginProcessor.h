@@ -3,9 +3,11 @@
 #include <JuceHeader.h>
 #include "Parameters.h"
 #include "../SolarisCore/Amp/AmpRegistry.h"
+#include "../SolarisCore/Amp/NeuralModelLoadService.h"
 #include "../SolarisCore/Cab/CabinetEngine.h"
 #include "../SolarisCore/DSP/IAudioStage.h"
 #include "../SolarisCore/EQ/ParametricEQ.h"
+#include "../SolarisCore/Presets/PresetManager.h"
 #include "../SolarisCore/Effects/EffectChain.h"
 #include "../SolarisCore/Effects/PreEffects.h"
 #include "../SolarisCore/Effects/PostEffects.h"
@@ -17,7 +19,7 @@ class SolarisSilverlineAudioProcessor final : public juce::AudioProcessor
 {
 public:
     SolarisSilverlineAudioProcessor();
-    ~SolarisSilverlineAudioProcessor() override = default;
+    ~SolarisSilverlineAudioProcessor() override;
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
@@ -49,6 +51,7 @@ public:
 
     juce::AudioProcessorValueTreeState& getValueTreeState() noexcept { return parameters; }
     solaris::CabinetEngine& getCabinetEngine() noexcept { return cabinetEngine; }
+    solaris::PresetManager& getPresetManager() noexcept { return presetManager; }
     solaris::TunerSnapshot getTunerSnapshot() const noexcept { return tunerEngine.getSnapshot(); }
 
     void setTunerMuted(bool shouldMute) noexcept { tunerMuted.store(shouldMute, std::memory_order_relaxed); }
@@ -68,11 +71,16 @@ public:
        #endif
     }
 
-    // Explicit model changes run off the audio callback. Model construction/loading
-    // happens first; only the final unique_ptr swap is protected by JUCE's callback lock.
-    bool loadNeuralAmpModel(const juce::File& modelFile);
+    // Non-blocking NAM API. Filesystem access/model construction happen on a worker thread.
+    bool requestNeuralAmpModelLoad(const juce::File& modelFile, bool rememberRecent = true);
+    bool loadNeuralAmpModel(const juce::File& modelFile) { return requestNeuralAmpModelLoad(modelFile); }
     bool useAnalogueAmp();
     juce::String getActiveAmpModelId() const;
+    solaris::NeuralLoadStatus getNeuralModelStatus() const { return neuralModelLoader.getStatus(); }
+    juce::StringArray getRecentNeuralModels() const;
+
+    juce::ValueTree capturePresetState();
+    void applyPresetState(const juce::ValueTree& state);
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
@@ -81,6 +89,11 @@ private:
     void syncEffectParameters() noexcept;
     void syncPostEqParameters() noexcept;
     void cacheParameterPointers();
+    void scheduleDesiredNeuralModel();
+    void completeNeuralModelLoad(std::unique_ptr<solaris::NeuralAmpModel> candidate,
+                                 const solaris::NeuralLoadStatus& status);
+    juce::ValueTree createAmpState() const;
+    void restoreAmpStateMetadata(const juce::ValueTree& ampState);
 
     struct EqBandPointers
     {
@@ -95,6 +108,7 @@ private:
     solaris::CabinetEngine cabinetEngine;
     solaris::ParametricEQ postEq;
     solaris::TunerEngine tunerEngine;
+    solaris::PresetManager presetManager;
 
     juce::dsp::Gain<float> inputGainStage;
 
@@ -153,6 +167,14 @@ private:
     std::atomic<bool> inputClip { false };
     std::atomic<bool> outputClip { false };
     bool prepared = false;
+
+    mutable juce::CriticalSection ampStateLock;
+    juce::String desiredAmpBackend { "silverline68" };
+    juce::String desiredNeuralPath;
+    juce::StringArray recentNeuralModels;
+
+    // Keep this last so shutdown happens before state used by completion callbacks is destroyed.
+    solaris::NeuralModelLoadService neuralModelLoader;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SolarisSilverlineAudioProcessor)
 };

@@ -12,6 +12,22 @@ namespace NeuralAudio
 
 namespace solaris
 {
+    struct NeuralModelMetadata
+    {
+        juce::String filePath;
+        juce::String displayName;
+        juce::String modelVersion;
+        juce::String modeledBy;
+        juce::String gearMake;
+        juce::String gearModel;
+        juce::String gearType;
+        juce::String toneType;
+        juce::String sampleRateMode;
+        double modelSampleRate = 0.0;
+        double effectiveSampleRate = 0.0;
+        int receptiveFieldSamples = -1;
+    };
+
     class NeuralAmpModel final : public IAmpModel
     {
     public:
@@ -26,10 +42,14 @@ namespace solaris
         void process(juce::AudioBuffer<float>& buffer) noexcept override;
         void reset() noexcept override;
 
+        // Non realtime API. File parsing, model construction and prewarming happen here.
         bool loadFromFile(const juce::File& modelFile);
+
         bool isLoaded() const noexcept { return models[0] != nullptr; }
-        const juce::String& loadedModelName() const noexcept { return modelName; }
+        const NeuralModelMetadata& modelMetadata() const noexcept { return loadedMetadata; }
+        const juce::String& loadedModelName() const noexcept { return loadedMetadata.displayName; }
         const juce::String& lastLoadError() const noexcept { return loadError; }
+        double hostSampleRate() const noexcept { return sampleRate; }
 
     private:
         static constexpr std::size_t maxChannels = 2;
@@ -43,11 +63,12 @@ namespace solaris
         juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> enabledMix;
 
         double sampleRate = 48000.0;
+        double loadedForHostSampleRate = 0.0;
         std::size_t maximumBlockSize = 512;
         std::size_t activeChannels = 2;
         float inputGain = 1.0f;
         float outputGain = 1.0f;
-        juce::String modelName;
+        NeuralModelMetadata loadedMetadata;
         juce::String loadError;
     };
 }

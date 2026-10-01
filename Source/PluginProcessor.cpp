@@ -56,6 +56,11 @@ SolarisSilverlineAudioProcessor::SolarisSilverlineAudioProcessor()
     cacheParameterPointers();
 }
 
+SolarisSilverlineAudioProcessor::~SolarisSilverlineAudioProcessor()
+{
+    neuralModelLoader.shutdown();
+}
+
 void SolarisSilverlineAudioProcessor::cacheParameterPointers()
 {
     inputGainParameter = parameters.getRawParameterValue(solaris::ParameterIDs::inputGain);
@@ -178,11 +183,13 @@ void SolarisSilverlineAudioProcessor::prepareToPlay(double sampleRate, int sampl
                       + preFxChain.latencySamples()
                       + postFxChain.latencySamples());
     prepared = true;
+    scheduleDesiredNeuralModel();
 }
 
 void SolarisSilverlineAudioProcessor::releaseResources()
 {
     prepared = false;
+    neuralModelLoader.cancelPending();
     tunerEngine.stop();
     inputGainStage.reset();
     preFxChain.reset();
@@ -347,33 +354,81 @@ void SolarisSilverlineAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
         outputClip.store(true, std::memory_order_relaxed);
 }
 
-bool SolarisSilverlineAudioProcessor::loadNeuralAmpModel(const juce::File& modelFile)
+bool SolarisSilverlineAudioProcessor::requestNeuralAmpModelLoad(const juce::File& modelFile, bool rememberRecent)
 {
    #if !SOLARIS_ENABLE_NEURAL_AUDIO
-    juce::ignoreUnused(modelFile);
+    juce::ignoreUnused(modelFile, rememberRecent);
     return false;
    #else
-    auto candidate = std::make_unique<solaris::NeuralAmpModel>();
-    if (prepared)
-        candidate->prepare(lastAmpSpec);
-    candidate->setParameters(readAmpParameters());
-
-    if (!candidate->loadFromFile(modelFile))
+    const auto path = modelFile.getFullPathName();
+    if (path.isEmpty())
         return false;
 
-    std::unique_ptr<solaris::IAmpModel> replacement = std::move(candidate);
     {
-        const juce::ScopedLock lock(getCallbackLock());
-        ampRegistry.swapSelected(replacement);
+        const juce::ScopedLock lock(ampStateLock);
+        desiredAmpBackend = "neural-nam";
+        desiredNeuralPath = path;
+        if (rememberRecent)
+        {
+            recentNeuralModels.removeString(path);
+            recentNeuralModels.insert(0, path);
+            while (recentNeuralModels.size() > 8)
+                recentNeuralModels.remove(recentNeuralModels.size() - 1);
+        }
     }
 
-    parameters.state.setProperty("neuralModelPath", modelFile.getFullPathName(), nullptr);
+    scheduleDesiredNeuralModel();
     return true;
    #endif
 }
 
+void SolarisSilverlineAudioProcessor::scheduleDesiredNeuralModel()
+{
+   #if SOLARIS_ENABLE_NEURAL_AUDIO
+    if (!prepared)
+        return;
+
+    juce::String path;
+    {
+        const juce::ScopedLock lock(ampStateLock);
+        if (desiredAmpBackend != "neural-nam" || desiredNeuralPath.isEmpty())
+            return;
+        path = desiredNeuralPath;
+    }
+
+    const auto spec = lastAmpSpec;
+    const auto params = readAmpParameters();
+    neuralModelLoader.request(juce::File(path), spec, params,
+        [this](std::unique_ptr<solaris::NeuralAmpModel> candidate, const solaris::NeuralLoadStatus& status)
+        {
+            completeNeuralModelLoad(std::move(candidate), status);
+        });
+   #endif
+}
+
+void SolarisSilverlineAudioProcessor::completeNeuralModelLoad(std::unique_ptr<solaris::NeuralAmpModel> candidate,
+                                                               const solaris::NeuralLoadStatus& status)
+{
+    if (candidate == nullptr || status.state != solaris::NeuralLoadState::loaded)
+        return;
+
+    {
+        const juce::ScopedLock lock(ampStateLock);
+        if (desiredAmpBackend != "neural-nam" || desiredNeuralPath != status.requestedPath)
+            return;
+    }
+
+    std::unique_ptr<solaris::IAmpModel> replacement = std::move(candidate);
+    {
+        const juce::ScopedLock hostCallbackGuard(getCallbackLock());
+        ampRegistry.swapSelected(replacement);
+    }
+}
+
 bool SolarisSilverlineAudioProcessor::useAnalogueAmp()
 {
+    neuralModelLoader.cancelPending();
+
     auto candidate = std::make_unique<solaris::Silverline68Amp>();
     if (prepared)
         candidate->prepare(lastAmpSpec);
@@ -381,8 +436,13 @@ bool SolarisSilverlineAudioProcessor::useAnalogueAmp()
 
     std::unique_ptr<solaris::IAmpModel> replacement = std::move(candidate);
     {
-        const juce::ScopedLock lock(getCallbackLock());
+        const juce::ScopedLock hostCallbackGuard(getCallbackLock());
         ampRegistry.swapSelected(replacement);
+    }
+
+    {
+        const juce::ScopedLock lock(ampStateLock);
+        desiredAmpBackend = "silverline68";
     }
 
     return true;
@@ -390,8 +450,120 @@ bool SolarisSilverlineAudioProcessor::useAnalogueAmp()
 
 juce::String SolarisSilverlineAudioProcessor::getActiveAmpModelId() const
 {
-    const auto* current = ampRegistry.current();
-    return current != nullptr ? juce::String(current->metadata().id) : juce::String();
+    const juce::ScopedLock lock(ampStateLock);
+    return desiredAmpBackend;
+}
+
+juce::StringArray SolarisSilverlineAudioProcessor::getRecentNeuralModels() const
+{
+    const juce::ScopedLock lock(ampStateLock);
+    return recentNeuralModels;
+}
+
+juce::ValueTree SolarisSilverlineAudioProcessor::createAmpState() const
+{
+    juce::ValueTree amp("AMP_STATE");
+    const juce::ScopedLock lock(ampStateLock);
+    amp.setProperty("backendId", desiredAmpBackend, nullptr);
+    amp.setProperty("neuralModelPath", desiredNeuralPath, nullptr);
+
+    juce::ValueTree recent("RECENT_MODELS");
+    for (const auto& path : recentNeuralModels)
+    {
+        juce::ValueTree item("MODEL");
+        item.setProperty("path", path, nullptr);
+        recent.addChild(item, -1, nullptr);
+    }
+
+    amp.addChild(recent, -1, nullptr);
+    return amp;
+}
+
+void SolarisSilverlineAudioProcessor::restoreAmpStateMetadata(const juce::ValueTree& amp)
+{
+    const juce::ScopedLock lock(ampStateLock);
+    desiredAmpBackend = amp.getProperty("backendId", "silverline68").toString();
+    desiredNeuralPath = amp.getProperty("neuralModelPath").toString();
+    recentNeuralModels.clear();
+
+    const auto recent = amp.getChildWithName("RECENT_MODELS");
+    for (int i = 0; i < recent.getNumChildren() && recentNeuralModels.size() < 8; ++i)
+    {
+        const auto path = recent.getChild(i).getProperty("path").toString();
+        if (path.isNotEmpty() && !recentNeuralModels.contains(path))
+            recentNeuralModels.add(path);
+    }
+
+    if (desiredNeuralPath.isNotEmpty() && !recentNeuralModels.contains(desiredNeuralPath))
+        recentNeuralModels.insert(0, desiredNeuralPath);
+}
+
+juce::ValueTree SolarisSilverlineAudioProcessor::capturePresetState()
+{
+    juce::ValueTree pedalState("PEDALS");
+    pedalState.addChild(preFxChain.createState("PRE"), -1, nullptr);
+    pedalState.addChild(postFxChain.createState("POST"), -1, nullptr);
+
+    return solaris::PresetState::create(parameters,
+                                        getActiveAmpModelId(),
+                                        cabinetEngine.createState(),
+                                        postEq.createState(),
+                                        pedalState,
+                                        createAmpState());
+}
+
+void SolarisSilverlineAudioProcessor::applyPresetState(const juce::ValueTree& incoming)
+{
+    const auto state = solaris::PresetState::normalise(incoming, parameters.state.getType());
+    if (!state.isValid())
+        return;
+
+    const auto parameterState = solaris::PresetState::parameterState(state, parameters.state.getType());
+    if (parameterState.isValid())
+        parameters.replaceState(parameterState.createCopy());
+
+    cabinetEngine.restoreState(solaris::PresetState::cabinetState(state));
+    postEq.restoreState(solaris::PresetState::eqState(state));
+
+    const auto pedalState = solaris::PresetState::pedalState(state);
+    if (pedalState.isValid())
+    {
+        preFxChain.restoreState(pedalState.getChildWithName("PRE"));
+        postFxChain.restoreState(pedalState.getChildWithName("POST"));
+    }
+
+    auto amp = solaris::PresetState::ampState(state);
+    if (!amp.isValid())
+    {
+        amp = juce::ValueTree("AMP_STATE");
+        amp.setProperty("backendId", solaris::PresetState::ampModelId(state), nullptr);
+        amp.setProperty("neuralModelPath", solaris::PresetState::neuralModelPath(state), nullptr);
+    }
+    restoreAmpStateMetadata(amp);
+
+    const auto requestedAmp = solaris::PresetState::ampModelId(state);
+    if (requestedAmp == "neural-nam")
+    {
+        auto fallback = std::make_unique<solaris::Silverline68Amp>();
+        if (prepared)
+            fallback->prepare(lastAmpSpec);
+        fallback->setParameters(readAmpParameters());
+
+        std::unique_ptr<solaris::IAmpModel> replacement = std::move(fallback);
+        {
+            const juce::ScopedLock hostCallbackGuard(getCallbackLock());
+            ampRegistry.swapSelected(replacement);
+        }
+        scheduleDesiredNeuralModel();
+    }
+    else
+    {
+        useAnalogueAmp();
+    }
+
+    syncCabParameters();
+    syncEffectParameters();
+    syncPostEqParameters();
 }
 
 juce::AudioProcessorEditor* SolarisSilverlineAudioProcessor::createEditor()
@@ -406,17 +578,7 @@ double SolarisSilverlineAudioProcessor::getTailLengthSeconds() const
 
 void SolarisSilverlineAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
-    juce::ValueTree pedalState("PEDALS");
-    pedalState.addChild(preFxChain.createState("PRE"), -1, nullptr);
-    pedalState.addChild(postFxChain.createState("POST"), -1, nullptr);
-
-    const auto state = solaris::PresetState::create(
-        parameters,
-        getActiveAmpModelId(),
-        cabinetEngine.createState(),
-        postEq.createState(),
-        pedalState);
-
+    const auto state = capturePresetState();
     if (auto xml = state.createXml())
         copyXmlToBinary(*xml, destData);
 }
@@ -424,46 +586,7 @@ void SolarisSilverlineAudioProcessor::getStateInformation(juce::MemoryBlock& des
 void SolarisSilverlineAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary(data, sizeInBytes))
-    {
-        const auto state = solaris::PresetState::normalise(
-            juce::ValueTree::fromXml(*xml), parameters.state.getType());
-
-        if (!state.isValid())
-            return;
-
-        const auto parameterState = solaris::PresetState::parameterState(
-            state, parameters.state.getType());
-
-        if (parameterState.isValid())
-            parameters.replaceState(parameterState.createCopy());
-
-        cabinetEngine.restoreState(solaris::PresetState::cabinetState(state));
-        postEq.restoreState(solaris::PresetState::eqState(state));
-
-        const auto pedalState = solaris::PresetState::pedalState(state);
-        if (pedalState.isValid())
-        {
-            preFxChain.restoreState(pedalState.getChildWithName("PRE"));
-            postFxChain.restoreState(pedalState.getChildWithName("POST"));
-        }
-
-        const auto requestedAmp = solaris::PresetState::ampModelId(state);
-        if (requestedAmp == "neural-nam")
-        {
-            const auto modelPath = parameters.state.getProperty("neuralModelPath").toString();
-            const juce::File modelFile(modelPath);
-            if (modelPath.isEmpty() || !modelFile.existsAsFile() || !loadNeuralAmpModel(modelFile))
-                useAnalogueAmp();
-        }
-        else
-        {
-            useAnalogueAmp();
-        }
-
-        syncCabParameters();
-        syncEffectParameters();
-        syncPostEqParameters();
-    }
+        applyPresetState(juce::ValueTree::fromXml(*xml));
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout

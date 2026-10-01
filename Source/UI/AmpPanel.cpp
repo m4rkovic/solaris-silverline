@@ -31,11 +31,9 @@ namespace solaris::ui
             if (!processor.isNeuralAudioAvailable())
                 return;
 
-            const auto path = parameterState.state.getProperty("neuralModelPath").toString();
-            const juce::File modelFile(path);
-
-            if (path.isNotEmpty() && modelFile.existsAsFile())
-                processor.loadNeuralAmpModel(modelFile);
+            const auto recent = processor.getRecentNeuralModels();
+            if (!recent.isEmpty())
+                processor.requestNeuralAmpModelLoad(juce::File(recent[0]), false);
 
             refreshModelStatus();
         };
@@ -145,9 +143,7 @@ namespace solaris::ui
     {
         const auto activeId = processor.getActiveAmpModelId();
         const auto neuralAvailable = processor.isNeuralAudioAvailable();
-        const auto path = parameterState.state.getProperty("neuralModelPath").toString();
-        const juce::File modelFile(path);
-        const auto modelReady = path.isNotEmpty() && modelFile.existsAsFile();
+        const auto status = processor.getNeuralModelStatus();
         const auto neuralActive = activeId == "neural-nam";
 
         analogueModelButton.setActive(activeId == "silverline68");
@@ -158,29 +154,53 @@ namespace solaris::ui
         if (!neuralAvailable)
         {
             modelStatusLabel.setText("NAM • BACKEND OFF", juce::dontSendNotification);
-            modelNameLabel.setText(
-                "NeuralAudio disabled in this build", juce::dontSendNotification);
+            modelNameLabel.setText("NeuralAudio disabled in this build", juce::dontSendNotification);
+            return;
         }
-        else if (neuralActive)
+
+        switch (status.state)
         {
-            modelStatusLabel.setText("NAM • ACTIVE", juce::dontSendNotification);
-            modelNameLabel.setText(
-                modelReady ? modelFile.getFileNameWithoutExtension()
-                           : juce::String("Neural model"),
-                juce::dontSendNotification);
-        }
-        else if (modelReady)
-        {
-            modelStatusLabel.setText("NAM • READY", juce::dontSendNotification);
-            modelNameLabel.setText(
-                modelFile.getFileNameWithoutExtension(), juce::dontSendNotification);
-        }
-        else
-        {
-            modelStatusLabel.setText("NAM • EMPTY", juce::dontSendNotification);
-            modelNameLabel.setText(
-                "Load a .nam model to enable Neural Model",
-                juce::dontSendNotification);
+            case solaris::NeuralLoadState::loading:
+                modelStatusLabel.setText("NAM • LOADING", juce::dontSendNotification);
+                modelNameLabel.setText(juce::File(status.requestedPath).getFileNameWithoutExtension(),
+                                       juce::dontSendNotification);
+                break;
+            case solaris::NeuralLoadState::loaded:
+                modelStatusLabel.setText(neuralActive ? "NAM • ACTIVE" : "NAM • READY",
+                                         juce::dontSendNotification);
+                modelNameLabel.setText(status.metadata.displayName.isNotEmpty()
+                                           ? status.metadata.displayName
+                                           : juce::File(status.requestedPath).getFileNameWithoutExtension(),
+                                       juce::dontSendNotification);
+                break;
+            case solaris::NeuralLoadState::missing:
+                modelStatusLabel.setText("NAM • FILE MISSING", juce::dontSendNotification);
+                modelNameLabel.setText(juce::File(status.requestedPath).getFileName(),
+                                       juce::dontSendNotification);
+                break;
+            case solaris::NeuralLoadState::error:
+                modelStatusLabel.setText("NAM • LOAD ERROR", juce::dontSendNotification);
+                modelNameLabel.setText(status.error.isNotEmpty() ? status.error : juce::String("Model could not be loaded"),
+                                       juce::dontSendNotification);
+                break;
+            case solaris::NeuralLoadState::idle:
+            default:
+            {
+                const auto recent = processor.getRecentNeuralModels();
+                if (!recent.isEmpty())
+                {
+                    modelStatusLabel.setText("NAM • READY", juce::dontSendNotification);
+                    modelNameLabel.setText(juce::File(recent[0]).getFileNameWithoutExtension(),
+                                           juce::dontSendNotification);
+                }
+                else
+                {
+                    modelStatusLabel.setText("NAM • EMPTY", juce::dontSendNotification);
+                    modelNameLabel.setText("Load a .nam model to enable Neural Model",
+                                           juce::dontSendNotification);
+                }
+                break;
+            }
         }
     }
 
