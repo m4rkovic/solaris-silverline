@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.24)
 project(SolarisSilverline
     VERSION 0.1.0
     DESCRIPTION "Solaris Silverline - boutique guitar amplifier suite"
-    LANGUAGES CXX
+    LANGUAGES C CXX
 )
 
 set(CMAKE_CXX_STANDARD 20)
