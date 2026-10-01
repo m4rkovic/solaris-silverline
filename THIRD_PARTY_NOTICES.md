@@ -101,6 +101,23 @@ The above copyright notice and this permission notice shall be included in all c
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+
+## 0xFX factory cabinet IR
+
+Source: https://github.com/averagenative/0xFX
+
+Pinned source commit: `5b248779c96dce6e64d0ed29cfa598014dc4d3c4`
+
+Asset: `resources/ir/bundled/1x12_open.wav`
+
+The 0xFX project documents its four bundled real cabinet impulse responses,
+including this open-back 1x12 IR, as CC0 / public-domain assets. Solaris embeds
+the WAV data as a development factory fallback and labels it generically as
+"Factory Open Back 1x12"; it is not represented as a Solaris Silverline 2x10
+capture.
+
+The 0xFX source code itself is MIT-licensed, copyright (c) 2026 Dan Michael.
+
 ## Models and impulse responses
 
 A `.nam` file or cabinet impulse response can have its own copyright/licensing terms independent of the runtime code. Do not bundle third-party models or IRs unless redistribution rights are explicitly documented.
