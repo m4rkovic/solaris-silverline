@@ -88,6 +88,7 @@ private:
     void syncCabParameters() noexcept;
     void syncEffectParameters() noexcept;
     void syncPostEqParameters() noexcept;
+    void routeGuitarInput(juce::AudioBuffer<float>& buffer) noexcept;
     void cacheParameterPointers();
     void scheduleDesiredNeuralModel();
     void completeNeuralModelLoad(std::unique_ptr<solaris::NeuralAmpModel> candidate,
@@ -166,6 +167,7 @@ private:
     std::atomic<float> outputPeakDb { -72.0f };
     std::atomic<bool> inputClip { false };
     std::atomic<bool> outputClip { false };
+    int selectedInputChannel = 0;
     bool prepared = false;
 
     mutable juce::CriticalSection ampStateLock;
