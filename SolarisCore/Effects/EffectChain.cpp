@@ -105,7 +105,8 @@ namespace solaris
     {
         int total = 0;
         for (std::size_t i = 0; i < registeredCount; ++i)
-            total += registered[i]->latencySamples();
+            if (!registered[i]->isBypassed())
+                total += registered[i]->latencySamples();
         return total;
     }
 
@@ -114,7 +115,8 @@ namespace solaris
         // Effects are serial, so conservative host tail reporting sums their tails.
         double total = 0.0;
         for (std::size_t i = 0; i < registeredCount; ++i)
-            total += registered[i]->tailLengthSeconds();
+            if (!registered[i]->isBypassed())
+                total += registered[i]->tailLengthSeconds();
         return total;
     }
 }
