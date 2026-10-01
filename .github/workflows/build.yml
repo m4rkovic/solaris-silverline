@@ -93,6 +93,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "NAM 48k smoke test failed" }
           & $bench.FullName --seconds 0.5 --nam nam-reference-model.nam --sample-rate 44100
           if ($LASTEXITCODE -ne 0) { throw "NAM 44.1k SRC smoke test failed" }
+      - name: Validate Windows VST3 with pluginval
+        shell: pwsh
+        run: |
+          curl.exe -L --fail --retry 3 "https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Windows.zip" -o pluginval.zip
+          if ($LASTEXITCODE -ne 0) { throw "Could not download pluginval" }
+          Expand-Archive -Path pluginval.zip -DestinationPath pluginval-dist -Force
+          $validator = Get-ChildItem -Path pluginval-dist -Recurse -Filter "pluginval.exe" | Select-Object -First 1
+          $vst3 = Get-ChildItem -Path build -Recurse -Filter "Solaris Silverline.vst3" | Select-Object -First 1
+          if ($null -eq $validator) { throw "pluginval.exe not found" }
+          if ($null -eq $vst3) { throw "Solaris Silverline.vst3 not found" }
+          & $validator.FullName --strictness-level 5 --skip-gui-tests $vst3.FullName
+          if ($LASTEXITCODE -ne 0) { throw "Windows VST3 pluginval failed" }
       - name: Package release artifacts
         shell: pwsh
         run: .\scripts\package.ps1 -BuildDir build -Config Release
