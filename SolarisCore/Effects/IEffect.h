@@ -102,22 +102,27 @@ namespace solaris
                 return;
             }
 
-            captureAlignedDry(buffer, numChannels, numSamples);
-
             const auto fullyBypassed = std::abs(bypassMix.getCurrentValue()) <= 1.0e-7f
                                     && std::abs(bypassMix.getTargetValue()) <= 1.0e-7f;
 
-            if (!fullyBypassed)
-                processEffect(buffer);
+            // A fully bypassed effect must be a true zero-latency wire. The old
+            // implementation still routed dry audio through the oversampling
+            // alignment delay, so five disabled pedals could add latency to a
+            // completely clean guitar path.
+            if (fullyBypassed)
+                return;
+
+            captureAlignedDry(buffer, numChannels, numSamples);
+            processEffect(buffer);
 
             for (int sample = 0; sample < numSamples; ++sample)
             {
-                const auto wet = fullyBypassed ? 0.0f : bypassMix.getNextValue();
+                const auto wet = bypassMix.getNextValue();
 
                 for (int channel = 0; channel < numChannels; ++channel)
                 {
                     const auto dry = dryScratch.getSample(channel, sample);
-                    const auto effected = fullyBypassed ? dry : buffer.getSample(channel, sample);
+                    const auto effected = buffer.getSample(channel, sample);
                     buffer.setSample(channel, sample, dry + (effected - dry) * wet);
                 }
             }
