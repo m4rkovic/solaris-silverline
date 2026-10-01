@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" SOLARIS_VERSION LIMIT_COUNT 1)
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION.txt" SOLARIS_VERSION LIMIT_COUNT 1)
 project(SolarisSilverline
     VERSION ${SOLARIS_VERSION}
     DESCRIPTION "Solaris Silverline - boutique guitar amplifier suite"

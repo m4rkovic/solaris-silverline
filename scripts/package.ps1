@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $build = Join-Path $root $BuildDir
-$version = (Get-Content (Join-Path $root "VERSION") -Raw).Trim()
+$version = (Get-Content (Join-Path $root "VERSION.txt") -Raw).Trim()
 $packageRoot = Join-Path $root "dist\SolarisSilverline-$version-windows-x64"
 if (Test-Path $packageRoot) { Remove-Item -Recurse -Force $packageRoot }
 New-Item -ItemType Directory -Force -Path (Join-Path $packageRoot "VST3") | Out-Null
@@ -19,5 +19,5 @@ Copy-Item -Recurse -Force $vst3.FullName (Join-Path $packageRoot "VST3")
 Copy-Item -Force $standalone.FullName (Join-Path $packageRoot "Standalone")
 Copy-Item -Force (Join-Path $root "LICENSE.txt") $packageRoot
 Copy-Item -Force (Join-Path $root "THIRD_PARTY_NOTICES.md") $packageRoot
-Copy-Item -Force (Join-Path $root "VERSION") $packageRoot
+Copy-Item -Force (Join-Path $root "VERSION.txt") $packageRoot
 Write-Host "Package: $packageRoot" -ForegroundColor Green

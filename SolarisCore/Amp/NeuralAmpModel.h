@@ -22,6 +22,8 @@ namespace solaris
         juce::String gearModel;
         juce::String gearType;
         juce::String toneType;
+        juce::String sampleRateMode;
+        double modelSampleRate = 0.0;
         double effectiveSampleRate = 0.0;
         int receptiveFieldSamples = -1;
     };
@@ -61,6 +63,7 @@ namespace solaris
         juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> enabledMix;
 
         double sampleRate = 48000.0;
+        double loadedForHostSampleRate = 0.0;
         std::size_t maximumBlockSize = 512;
         std::size_t activeChannels = 2;
         float inputGain = 1.0f;

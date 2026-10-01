@@ -218,6 +218,11 @@ bool SolarisSilverlineAudioProcessor::requestNeuralAmpModelLoad(const juce::File
 void SolarisSilverlineAudioProcessor::scheduleDesiredNeuralModel()
 {
    #if SOLARIS_ENABLE_NEURAL_AUDIO
+    // State can be restored before the host calls prepareToPlay(). Delay all
+    // filesystem/model work until the real host sample rate and block size exist.
+    if (!prepared)
+        return;
+
     juce::String path;
     {
         const juce::ScopedLock lock(ampStateLock);
@@ -250,7 +255,7 @@ void SolarisSilverlineAudioProcessor::completeNeuralModelLoad(std::unique_ptr<so
 
     std::unique_ptr<solaris::IAmpModel> replacement = std::move(candidate);
     {
-        const juce::ScopedLock callbackLock(getCallbackLock());
+        const juce::ScopedLock hostCallbackGuard(getCallbackLock());
         ampRegistry.swapSelected(replacement);
     }
 }
@@ -265,7 +270,7 @@ bool SolarisSilverlineAudioProcessor::useAnalogueAmp()
 
     std::unique_ptr<solaris::IAmpModel> replacement = std::move(candidate);
     {
-        const juce::ScopedLock callbackLock(getCallbackLock());
+        const juce::ScopedLock hostCallbackGuard(getCallbackLock());
         ampRegistry.swapSelected(replacement);
     }
     {
@@ -363,7 +368,7 @@ void SolarisSilverlineAudioProcessor::applyPresetState(const juce::ValueTree& in
         fallback->setParameters(readAmpParameters());
         std::unique_ptr<solaris::IAmpModel> replacement = std::move(fallback);
         {
-            const juce::ScopedLock callbackLock(getCallbackLock());
+            const juce::ScopedLock hostCallbackGuard(getCallbackLock());
             ampRegistry.swapSelected(replacement);
         }
         scheduleDesiredNeuralModel();
