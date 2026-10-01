@@ -191,6 +191,53 @@ namespace
         return isFinite(buffer) && peakMagnitude(buffer) < 32.0f;
     }
 
+    bool exerciseTrueBypass()
+    {
+        solaris::AsymmetricOverdrive effect;
+        solaris::EffectPrepareSpec spec { 48000.0, 64u, 2u };
+        effect.prepare(spec);
+
+        juce::AudioBuffer<float> buffer(2, 64);
+        buffer.clear();
+        buffer.setSample(0, 0, 0.75f);
+        buffer.setSample(1, 0, -0.35f);
+
+        effect.process(buffer);
+
+        return std::abs(buffer.getSample(0, 0) - 0.75f) < 1.0e-7f
+            && std::abs(buffer.getSample(1, 0) + 0.35f) < 1.0e-7f
+            && std::abs(buffer.getSample(0, 1)) < 1.0e-7f;
+    }
+
+    bool exerciseAmpSilenceStability()
+    {
+        solaris::Silverline68Amp amp;
+        solaris::AmpPrepareSpec spec { 48000.0, 128u, 2u };
+        amp.prepare(spec);
+
+        solaris::AmpParameters params;
+        params.volume = 0.65f;
+        params.reverb = 0.0f;
+        params.tremoloIntensity = 0.0f;
+        amp.setParameters(params);
+
+        juce::AudioBuffer<float> buffer(2, 128);
+        buffer.clear();
+        buffer.setSample(0, 0, 0.5f);
+        buffer.setSample(1, 0, 0.5f);
+        amp.process(buffer);
+
+        for (int block = 0; block < 400; ++block)
+        {
+            buffer.clear();
+            amp.process(buffer);
+            if (!isFinite(buffer))
+                return false;
+        }
+
+        return peakMagnitude(buffer) < 1.0e-5f;
+    }
+
     bool exerciseEffectChainState()
     {
         solaris::VintageCompressor compressor;
@@ -269,6 +316,16 @@ int main()
     bool ok = exerciseEffectChainState();
     if (!ok)
         std::cerr << "EffectChain: ordering/state round-trip failed\n";
+
+    const auto bypassOk = exerciseTrueBypass();
+    if (!bypassOk)
+        std::cerr << "Effect bypass: disabled oversampled effect delayed or altered dry audio\n";
+    ok &= bypassOk;
+
+    const auto silenceOk = exerciseAmpSilenceStability();
+    if (!silenceOk)
+        std::cerr << "Silverline68Amp: residual/self-oscillating output after impulse\n";
+    ok &= silenceOk;
 
     for (const auto sampleRate : sampleRates)
         for (const auto blockSize : blockSizes)
