@@ -40,7 +40,9 @@ namespace solaris
         std::unique_ptr<juce::dsp::Oversampling<float>> oversampling;
         OnePoleLowpass bassBand;
         OnePoleLowpass trebleBand;
+        OnePoleLowpass lowTightener;
         OnePoleLowpass antiFizz;
+        OnePoleLowpass antiFizz2;
         OnePoleLowpass dcTracker;
         std::array<ChannelState, maxChannels> channelState {};
 
