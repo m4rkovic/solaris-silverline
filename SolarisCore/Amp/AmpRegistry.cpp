@@ -69,6 +69,11 @@ namespace solaris
         selected.swap(replacement);
     }
 
+    int AmpRegistry::latencySamples() const noexcept
+    {
+        return selected != nullptr ? selected->latencySamples() : 0;
+    }
+
     double AmpRegistry::tailLengthSeconds() const noexcept
     {
         return selected != nullptr ? selected->tailLengthSeconds() : 0.0;
