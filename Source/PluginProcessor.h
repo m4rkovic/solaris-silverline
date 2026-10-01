@@ -6,6 +6,9 @@
 #include "../SolarisCore/Cab/CabinetEngine.h"
 #include "../SolarisCore/DSP/IAudioStage.h"
 #include "../SolarisCore/EQ/ParametricEQ.h"
+#include "../SolarisCore/Effects/EffectChain.h"
+#include "../SolarisCore/Effects/PreEffects.h"
+#include "../SolarisCore/Effects/PostEffects.h"
 #include "../SolarisCore/Tuner/TunerEngine.h"
 #include <array>
 #include <atomic>
@@ -61,6 +64,7 @@ private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     solaris::AmpParameters readAmpParameters() const noexcept;
     void syncCabParameters() noexcept;
+    void syncEffectParameters() noexcept;
     void syncPostEqParameters() noexcept;
     void cacheParameterPointers();
 
@@ -79,8 +83,21 @@ private:
     solaris::TunerEngine tunerEngine;
 
     juce::dsp::Gain<float> inputGainStage;
-    solaris::BypassAudioStage preFxStage;
-    solaris::BypassAudioStage postFxStage;
+
+    solaris::VintageCompressor preCompressor;
+    solaris::AsymmetricOverdrive preOverdrive;
+    solaris::FlexibleDistortion preDistortion;
+    solaris::HardClipDistortion preHardClip;
+    solaris::SustainingFuzz preFuzz;
+    solaris::EffectChain preFxChain;
+
+    solaris::MultiStagePhaser postPhaser;
+    solaris::AnalogChorus postChorus;
+    solaris::BiasTremolo postTremolo;
+    solaris::AnalogDelay postDelay;
+    solaris::SpringSpaceReverb postReverb;
+    solaris::EffectChain postFxChain;
+
     juce::dsp::Gain<float> outputGainStage;
 
     std::atomic<float>* inputGainParameter = nullptr;
@@ -93,6 +110,17 @@ private:
     std::atomic<float>* ampReverbParameter = nullptr;
     std::atomic<float>* ampTremoloSpeedParameter = nullptr;
     std::atomic<float>* ampTremoloIntensityParameter = nullptr;
+
+    struct PedalPointers
+    {
+        std::atomic<float>* enabled = nullptr;
+        std::atomic<float>* first = nullptr;
+        std::atomic<float>* second = nullptr;
+        std::atomic<float>* third = nullptr;
+    };
+
+    std::array<PedalPointers, 5> prePedalParameters {};
+    std::array<PedalPointers, 5> postPedalParameters {};
 
     std::atomic<float>* cabWetParameter = nullptr;
     std::atomic<float>* cabMicBlendParameter = nullptr;
