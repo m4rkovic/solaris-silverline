@@ -22,6 +22,23 @@ The above copyright notice and this permission notice shall be included in all c
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+
+## AudioDSPTools
+
+Source: https://github.com/sdatkinson/AudioDSPTools
+
+Pinned commit: `844680d118f0317565132c3c5e3aca5f5c976e7a`
+
+MIT License
+
+Copyright (c) 2023 Steven Atkinson
+
+Solaris uses the realtime resampling components from AudioDSPTools for NAM
+model/host sample-rate conversion. The resampling headers retain their upstream
+iPlug2/WDL and Lanczos licensing notices; those components are permissively
+licensed for this use. See the corresponding upstream source headers for the
+full notices.
+
 ## NeuralAmpModelerCore
 
 Source: https://github.com/mikeoliphant/NeuralAmpModelerCore
