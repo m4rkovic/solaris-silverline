@@ -126,6 +126,7 @@ set(SOLARIS_SOURCES
     SolarisCore/Cab/CabinetEngine.h
     SolarisCore/Cab/CabinetEngine.cpp
     SolarisCore/Cab/FactoryIRCatalog.h
+    SolarisCore/Cab/FactoryOpenBackIR.h
     SolarisCore/EQ/ParametricEQ.h
     SolarisCore/EQ/ParametricEQ.cpp
     SolarisCore/Tuner/TunerEngine.h
