@@ -260,10 +260,10 @@ solaris::AmpParameters SolarisSilverlineAudioProcessor::readAmpParameters() cons
 {
     solaris::AmpParameters result;
     result.enabled = loadBool(ampEnabledParameter, true);
-    result.channel = loadParameter(ampChannelParameter) >= 0.5f
+    result.channel = loadParameter(ampChannelParameter, 1.0f) >= 0.5f
         ? solaris::AmpChannel::vintage
         : solaris::AmpChannel::custom;
-    result.volume = loadParameter(ampVolumeParameter, 4.5f) * 0.1f;
+    result.volume = loadParameter(ampVolumeParameter, 3.0f) * 0.1f;
     result.bass = loadParameter(ampBassParameter, 5.0f) * 0.1f;
     result.treble = loadParameter(ampTrebleParameter, 5.5f) * 0.1f;
     result.reverb = loadParameter(ampReverbParameter, 0.0f) * 0.1f;
@@ -658,10 +658,10 @@ SolarisSilverlineAudioProcessor::createParameterLayout()
         juce::ParameterID{solaris::ParameterIDs::ampEnabled, 1}, "Amp Enabled", true));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(
         juce::ParameterID{solaris::ParameterIDs::ampChannel, 1}, "Channel",
-        juce::StringArray{"Custom", "Vintage"}, 0));
+        juce::StringArray{"Custom", "Vintage"}, 1));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID{solaris::ParameterIDs::ampVolume, 1}, "Volume",
-        juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, 4.5f));
+        juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, 3.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID{solaris::ParameterIDs::ampBass, 1}, "Bass",
         juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, 5.0f));
