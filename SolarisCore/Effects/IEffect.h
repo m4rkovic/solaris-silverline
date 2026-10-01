@@ -78,7 +78,13 @@ namespace solaris
             bypassMix.setTargetValue(bypassed ? 0.0f : 1.0f);
 
             if (!bypassed)
+            {
+                // Re-arm the latency alignment path from silence so an effect that
+                // is enabled after a long bypass cannot crossfade against stale dry samples.
+                dryDelay.clear();
+                dryWriteIndex = 0;
                 resetEffect();
+            }
         }
 
         bool isBypassed() const noexcept final { return bypassed; }
@@ -102,13 +108,17 @@ namespace solaris
                 return;
             }
 
-            captureAlignedDry(buffer, numChannels, numSamples);
-
             const auto fullyBypassed = std::abs(bypassMix.getCurrentValue()) <= 1.0e-7f
                                     && std::abs(bypassMix.getTargetValue()) <= 1.0e-7f;
 
-            if (!fullyBypassed)
-                processEffect(buffer);
+            // A fully bypassed effect must be a true wire. In particular, do not
+            // run the latency-alignment delay for oversampled effects when they are
+            // off; doing so needlessly adds latency to an all-bypassed pedalboard.
+            if (fullyBypassed)
+                return;
+
+            captureAlignedDry(buffer, numChannels, numSamples);
+            processEffect(buffer);
 
             for (int sample = 0; sample < numSamples; ++sample)
             {
