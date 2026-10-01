@@ -2,7 +2,6 @@
 
 #include "IAmpModel.h"
 #include <JuceHeader.h>
-#include <array>
 #include <memory>
 
 namespace NeuralAudio
@@ -45,18 +44,16 @@ namespace solaris
         // Non realtime API. File parsing, model construction and prewarming happen here.
         bool loadFromFile(const juce::File& modelFile);
 
-        bool isLoaded() const noexcept { return models[0] != nullptr; }
+        bool isLoaded() const noexcept { return model != nullptr; }
         const NeuralModelMetadata& modelMetadata() const noexcept { return loadedMetadata; }
         const juce::String& loadedModelName() const noexcept { return loadedMetadata.displayName; }
         const juce::String& lastLoadError() const noexcept { return loadError; }
         double hostSampleRate() const noexcept { return sampleRate; }
 
     private:
-        static constexpr std::size_t maxChannels = 2;
-
         AmpMetadata info;
         AmpParameters currentParameters {};
-        std::array<std::unique_ptr<NeuralAudio::NeuralModel>, maxChannels> models;
+        std::unique_ptr<NeuralAudio::NeuralModel> model;
 
         juce::AudioBuffer<float> inputScratch;
         juce::AudioBuffer<float> outputScratch;
@@ -65,7 +62,6 @@ namespace solaris
         double sampleRate = 48000.0;
         double loadedForHostSampleRate = 0.0;
         std::size_t maximumBlockSize = 512;
-        std::size_t activeChannels = 2;
         float inputGain = 1.0f;
         float outputGain = 1.0f;
         NeuralModelMetadata loadedMetadata;
