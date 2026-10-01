@@ -152,6 +152,28 @@ namespace
             return false;
         }
 
+        // Once the bypass ramp has settled, bypass must be a true wire: no
+        // oversampling dry-delay, no level change, no stale latency buffer.
+        fillSignal(buffer, sampleRate, phase);
+        juce::AudioBuffer<float> reference;
+        reference.makeCopyOf(buffer);
+        effect.process(buffer);
+
+        float maxBypassError = 0.0f;
+        for (int channel = 0; channel < channels; ++channel)
+            for (int sample = 0; sample < blockSize; ++sample)
+                maxBypassError = juce::jmax(
+                    maxBypassError,
+                    std::abs(buffer.getSample(channel, sample)
+                           - reference.getSample(channel, sample)));
+
+        if (maxBypassError > 1.0e-6f)
+        {
+            std::cerr << name << ": settled bypass is not transparent (error "
+                      << maxBypassError << ")\n";
+            return false;
+        }
+
         return true;
     }
 
@@ -188,7 +210,22 @@ namespace
             return false;
         }
 
-        return isFinite(buffer) && peakMagnitude(buffer) < 32.0f;
+        if (!isFinite(buffer) || peakMagnitude(buffer) >= 32.0f)
+            return false;
+
+        // A stable amp must not self-oscillate from digital silence.
+        buffer.clear();
+        for (int block = 0; block < 24; ++block)
+        {
+            amp.process(buffer);
+            if (!isFinite(buffer) || peakMagnitude(buffer) > 1.0e-5f)
+            {
+                std::cerr << "Silverline68Amp: non-zero/self-oscillating output from silence\n";
+                return false;
+            }
+        }
+
+        return true;
     }
 
     bool exerciseEffectChainState()
