@@ -57,7 +57,7 @@ namespace
 
 int main(int argc, char** argv)
 {
-    constexpr double sampleRate = 48000.0;
+    double sampleRate = 48000.0;
     constexpr int blockSize = 128;
     double seconds = 5.0;
     juce::File namFile;
@@ -69,6 +69,9 @@ int main(int argc, char** argv)
             namFile = juce::File(argv[++i]);
         else if (arg == "--seconds" && i + 1 < argc)
             seconds = juce::jlimit(0.25, 60.0, juce::String(argv[++i]).getDoubleValue());
+        else if (arg == "--sample-rate" && i + 1 < argc)
+            sampleRate = juce::jlimit(8000.0, 384000.0,
+                                      juce::String(argv[++i]).getDoubleValue());
     }
 
     solaris::AmpPrepareSpec spec;
@@ -92,9 +95,48 @@ int main(int argc, char** argv)
         neural.setParameters(parameters);
         if (!neural.loadFromFile(namFile))
         {
-            std::cerr << "NAM benchmark skipped: " << neural.lastLoadError() << std::endl;
+            std::cerr << "NAM benchmark failed: " << neural.lastLoadError() << std::endl;
             return 2;
         }
+
+        juce::AudioBuffer<float> smoke(2, blockSize);
+        for (int n = 0; n < blockSize; ++n)
+        {
+            const auto x = 0.12f * std::sin(
+                static_cast<float>(juce::MathConstants<double>::twoPi * 220.0
+                                   * static_cast<double>(n) / sampleRate));
+            smoke.setSample(0, n, x);
+            smoke.setSample(1, n, x);
+        }
+
+        neural.process(smoke);
+        float peak = 0.0f;
+        for (int channel = 0; channel < smoke.getNumChannels(); ++channel)
+        {
+            for (int n = 0; n < smoke.getNumSamples(); ++n)
+            {
+                const auto sample = smoke.getSample(channel, n);
+                if (!std::isfinite(sample))
+                {
+                    std::cerr << "NAM smoke test produced non-finite output" << std::endl;
+                    return 3;
+                }
+                peak = juce::jmax(peak, std::abs(sample));
+            }
+        }
+
+        if (peak <= 1.0e-7f || peak > 32.0f)
+        {
+            std::cerr << "NAM smoke test produced invalid output peak=" << peak << std::endl;
+            return 4;
+        }
+
+        std::cout << "NAM smoke: host_rate=" << sampleRate
+                  << " model_rate=" << neural.modelMetadata().modelSampleRate
+                  << " mode=" << neural.modelMetadata().sampleRateMode
+                  << " latency_samples=" << neural.latencySamples()
+                  << " peak=" << peak << std::endl;
+
         printResult(runBenchmark("neural", neural, sampleRate, blockSize, seconds));
     }
    #else
