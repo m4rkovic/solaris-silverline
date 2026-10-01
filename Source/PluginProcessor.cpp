@@ -151,11 +151,19 @@ void SolarisSilverlineAudioProcessor::collapseGuitarInputToMono(juce::AudioBuffe
         // and preserves level when the guitar is plugged into Input 1 or Input 2.
         const auto leftPeak = buffer.getMagnitude(0, 0, buffer.getNumSamples());
         const auto rightPeak = buffer.getMagnitude(1, 0, buffer.getNumSamples());
-        const auto sourceChannel = rightPeak > leftPeak ? 1 : 0;
+
+        // Require a clear level advantage before switching physical inputs.
+        // This prevents the selected channel from chattering between two
+        // interface noise floors while the guitar is silent.
+        constexpr float switchRatio = 1.8f;
+        if (standaloneInputChannel == 0 && rightPeak > leftPeak * switchRatio)
+            standaloneInputChannel = 1;
+        else if (standaloneInputChannel == 1 && leftPeak > rightPeak * switchRatio)
+            standaloneInputChannel = 0;
 
         for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
         {
-            const auto mono = buffer.getSample(sourceChannel, sample);
+            const auto mono = buffer.getSample(standaloneInputChannel, sample);
             for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
                 buffer.setSample(channel, sample, mono);
         }
