@@ -260,6 +260,23 @@ namespace
 
         chain.restoreState(saved);
 
+        solaris::EffectPrepareSpec spec { 48000.0, 128u, 2u };
+        chain.prepare(spec);
+
+        if (chain.latencySamples() != 0)
+        {
+            std::cerr << "EffectChain: bypassed chain must report zero latency\n";
+            return false;
+        }
+
+        overdrive.setBypassed(false);
+        if (chain.latencySamples() <= 0)
+        {
+            std::cerr << "EffectChain: active oversampled effect must report latency\n";
+            return false;
+        }
+        overdrive.setBypassed(true);
+
         return chain.size() == 3
             && chain.at(0) == &distortion
             && chain.at(1) == &compressor
