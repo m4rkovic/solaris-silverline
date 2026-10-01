@@ -32,7 +32,10 @@ jobs:
       - name: Build VST3, Standalone and benchmark
         run: cmake --build build --config Release --target SolarisSilverline_VST3 SolarisSilverline_Standalone SolarisBenchmark --parallel 2
       - name: Analogue offline benchmark smoke test
-        run: ./build/SolarisBenchmark --seconds 1
+        run: |
+          BENCH="$(find build -type f -name 'SolarisBenchmark' -perm -111 -print -quit)"
+          test -n "$BENCH"
+          "$BENCH" --seconds 1
       - name: Package release artifacts
         run: bash scripts/package.sh build
       - name: Upload release artifacts
@@ -55,7 +58,10 @@ jobs:
         run: cmake --build build --config Release --target SolarisSilverline_VST3 SolarisSilverline_Standalone SolarisBenchmark --parallel 2
       - name: Analogue offline benchmark smoke test
         shell: pwsh
-        run: .\build\Release\SolarisBenchmark.exe --seconds 1
+        run: |
+          $bench = Get-ChildItem -Path build -Recurse -Filter "SolarisBenchmark.exe" | Select-Object -First 1
+          if ($null -eq $bench) { throw "SolarisBenchmark.exe not found" }
+          & $bench.FullName --seconds 1
       - name: Package release artifacts
         shell: pwsh
         run: .\scripts\package.ps1 -BuildDir build -Config Release

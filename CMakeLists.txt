@@ -150,7 +150,10 @@ endif()
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOLARIS_SOURCES})
 
 if(SOLARIS_BUILD_BENCHMARK)
-    add_executable(SolarisBenchmark
+    juce_add_console_app(SolarisBenchmark
+        PRODUCT_NAME "SolarisBenchmark"
+    )
+    target_sources(SolarisBenchmark PRIVATE
         Tests/Benchmark.cpp
         SolarisCore/Amp/NeuralAmpModel.h
         SolarisCore/Amp/NeuralAmpModel.cpp
