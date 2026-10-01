@@ -43,6 +43,19 @@ if(SOLARIS_ENABLE_NEURAL_AUDIO)
         GIT_SUBMODULES_RECURSE TRUE
     )
     FetchContent_MakeAvailable(NeuralAudio)
+
+    # NAM's reference plug-in uses AudioDSPTools' realtime Lanczos resampler
+    # around models whose native rate differs from the host. Populate the
+    # pinned source tree without adding its standalone tools/subprojects.
+    FetchContent_Declare(
+        AudioDSPTools
+        GIT_REPOSITORY https://github.com/sdatkinson/AudioDSPTools.git
+        GIT_TAG 844680d118f0317565132c3c5e3aca5f5c976e7a
+    )
+    FetchContent_GetProperties(AudioDSPTools)
+    if(NOT audiodsptools_POPULATED)
+        FetchContent_Populate(AudioDSPTools)
+    endif()
 endif()
 
 set(SOLARIS_PLUGIN_FORMATS VST3 Standalone)
@@ -129,6 +142,9 @@ set(SOLARIS_SOURCES
 
 target_sources(SolarisSilverline PRIVATE ${SOLARIS_SOURCES})
 target_include_directories(SolarisSilverline PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+if(SOLARIS_ENABLE_NEURAL_AUDIO)
+    target_include_directories(SolarisSilverline PRIVATE ${audiodsptools_SOURCE_DIR})
+endif()
 
 target_compile_definitions(SolarisSilverline
     PUBLIC
@@ -177,6 +193,9 @@ if(SOLARIS_BUILD_BENCHMARK)
     )
     juce_generate_juce_header(SolarisBenchmark)
     target_include_directories(SolarisBenchmark PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    if(SOLARIS_ENABLE_NEURAL_AUDIO)
+        target_include_directories(SolarisBenchmark PRIVATE ${audiodsptools_SOURCE_DIR})
+    endif()
     target_compile_definitions(SolarisBenchmark PRIVATE
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
