@@ -43,6 +43,16 @@ jobs:
           BENCH="$(find build -type f -name 'SolarisBenchmark' -perm -111 -print -quit)"
           test -n "$BENCH"
           "$BENCH" --seconds 1
+      - name: Real NAM smoke test at 48k and 44.1k
+        if: matrix.neural == 'ON'
+        run: |
+          curl -L --fail --retry 3 \
+            https://raw.githubusercontent.com/sdatkinson/NeuralAmpModelerPlugin/16be869746b8915885c7a35bafdcc0061faeb50e/REAPER/model.nam \
+            -o nam-reference-model.nam
+          BENCH="$(find build -type f -name 'SolarisBenchmark' -perm -111 -print -quit)"
+          test -n "$BENCH"
+          "$BENCH" --seconds 0.5 --nam nam-reference-model.nam --sample-rate 48000
+          "$BENCH" --seconds 0.5 --nam nam-reference-model.nam --sample-rate 44100
       - name: Package release artifacts
         run: bash scripts/package.sh build
       - name: Upload release artifacts
@@ -72,6 +82,17 @@ jobs:
           $bench = Get-ChildItem -Path build -Recurse -Filter "SolarisBenchmark.exe" | Select-Object -First 1
           if ($null -eq $bench) { throw "SolarisBenchmark.exe not found" }
           & $bench.FullName --seconds 1
+      - name: Real NAM smoke test at 48k and 44.1k
+        shell: pwsh
+        run: |
+          curl.exe -L --fail --retry 3 "https://raw.githubusercontent.com/sdatkinson/NeuralAmpModelerPlugin/16be869746b8915885c7a35bafdcc0061faeb50e/REAPER/model.nam" -o nam-reference-model.nam
+          if ($LASTEXITCODE -ne 0) { throw "Could not download NAM reference model" }
+          $bench = Get-ChildItem -Path build -Recurse -Filter "SolarisBenchmark.exe" | Select-Object -First 1
+          if ($null -eq $bench) { throw "SolarisBenchmark.exe not found" }
+          & $bench.FullName --seconds 0.5 --nam nam-reference-model.nam --sample-rate 48000
+          if ($LASTEXITCODE -ne 0) { throw "NAM 48k smoke test failed" }
+          & $bench.FullName --seconds 0.5 --nam nam-reference-model.nam --sample-rate 44100
+          if ($LASTEXITCODE -ne 0) { throw "NAM 44.1k SRC smoke test failed" }
       - name: Package release artifacts
         shell: pwsh
         run: .\scripts\package.ps1 -BuildDir build -Config Release
