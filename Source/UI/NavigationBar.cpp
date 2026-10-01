@@ -21,17 +21,17 @@ namespace solaris::ui
             addAndMakeVisible(*button);
         }
 
-        presetButton.onClick = [] {};
+        presetButton.setEnabled(false);
+        presetButton.setTooltip("Preset browser shell. Preset indexing is not connected yet.");
+
         tunerButton.onClick = [this]
         {
             if (onTunerRequested)
                 onTunerRequested();
         };
-        settingsButton.onClick = [] {};
 
         addAndMakeVisible(presetButton);
         addAndMakeVisible(tunerButton);
-        addAndMakeVisible(settingsButton);
 
         setActivePage(Page::amp);
     }
@@ -45,54 +45,50 @@ namespace solaris::ui
 
     void NavigationBar::paint(juce::Graphics& g)
     {
-        auto r = getLocalBounds().toFloat();
+        auto bounds = getLocalBounds().toFloat();
 
         juce::ColourGradient top(juce::Colour::fromRGB(27, 28, 29),
-                                 r.getCentreX(), r.getY(),
+                                 bounds.getCentreX(), bounds.getY(),
                                  Theme::surface(),
-                                 r.getCentreX(), r.getBottom(), false);
+                                 bounds.getCentreX(), bounds.getBottom(), false);
         g.setGradientFill(top);
-        g.fillRect(r);
+        g.fillRect(bounds);
 
         g.setColour(Theme::border().withAlpha(0.62f));
-        g.drawLine(0.0f, r.getBottom() - 0.5f, r.getRight(), r.getBottom() - 0.5f, 1.0f);
+        g.drawLine(0.0f, bounds.getBottom() - 0.5f,
+                   bounds.getRight(), bounds.getBottom() - 0.5f, 1.0f);
 
-        auto brandArea = getLocalBounds().removeFromLeft(176).reduced(18, 8);
+        auto brandArea = getLocalBounds().removeFromLeft(176).reduced(18, 7);
         g.setColour(Theme::text());
         g.setFont(juce::FontOptions(17.5f, juce::Font::bold));
-        g.drawText("SOLARIS", brandArea.removeFromTop(27),
+        g.drawText("SOLARIS", brandArea.removeFromTop(26),
                    juce::Justification::centredLeft, false);
 
         g.setColour(Theme::amber());
-        g.setFont(juce::FontOptions(12.0f));
-        g.drawText("Silverline", brandArea.removeFromTop(18),
+        g.setFont(juce::FontOptions(11.5f));
+        g.drawText("Silverline", brandArea.removeFromTop(17),
                    juce::Justification::centredLeft, false);
     }
 
     void NavigationBar::resized()
     {
-        auto r = getLocalBounds().reduced(12, 10);
-        r.removeFromLeft(176);
+        auto area = getLocalBounds().reduced(12, 9);
+        area.removeFromLeft(176);
 
-        const int utilityWidth = juce::jmin(326, juce::jmax(258, getWidth() / 4));
-        auto utility = r.removeFromRight(utilityWidth);
-
-        const int gap = 6;
-        settingsButton.setBounds(utility.removeFromRight(78));
-        utility.removeFromRight(gap);
-        tunerButton.setBounds(utility.removeFromRight(70));
-        utility.removeFromRight(gap);
+        auto utility = area.removeFromRight(226);
+        tunerButton.setBounds(utility.removeFromRight(72));
+        utility.removeFromRight(7);
         presetButton.setBounds(utility);
 
-        r.removeFromRight(16);
-        const int tabGap = 5;
-        const int buttonWidth = (r.getWidth() - tabGap * (pageCount - 1)) / pageCount;
+        area.removeFromRight(14);
+        constexpr int tabGap = 5;
+        const int buttonWidth = (area.getWidth() - tabGap * (pageCount - 1)) / pageCount;
 
         for (int i = 0; i < pageCount; ++i)
         {
-            pageButtons[(size_t) i]->setBounds(r.removeFromLeft(buttonWidth));
+            pageButtons[(size_t) i]->setBounds(area.removeFromLeft(buttonWidth));
             if (i < pageCount - 1)
-                r.removeFromLeft(tabGap);
+                area.removeFromLeft(tabGap);
         }
     }
 }

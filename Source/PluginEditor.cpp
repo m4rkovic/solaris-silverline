@@ -5,15 +5,18 @@ SolarisSilverlineAudioProcessorEditor::SolarisSilverlineAudioProcessorEditor(
     SolarisSilverlineAudioProcessor& p)
     : AudioProcessorEditor(&p),
       processor(p),
-      ampPanel(p.getValueTreeState()),
-      cabPanel(p.getValueTreeState()),
-      eqPanel(p.getValueTreeState())
+      globalStrip(p),
+      ampPanel(p),
+      cabPanel(p),
+      eqPanel(p.getValueTreeState()),
+      tooltipWindow(this, 650)
 {
     setResizable(true, true);
     setResizeLimits(960, 600, 1920, 1200);
     setSize(1280, 800);
 
     addAndMakeVisible(navigation);
+    addAndMakeVisible(globalStrip);
     addAndMakeVisible(preFxPanel);
     addAndMakeVisible(ampPanel);
     addAndMakeVisible(cabPanel);
@@ -75,7 +78,7 @@ void SolarisSilverlineAudioProcessorEditor::paint(juce::Graphics& g)
     g.fillRect(bounds);
 
     g.setColour(juce::Colours::white.withAlpha(0.018f));
-    for (int y = 72; y < getHeight(); y += 8)
+    for (int y = 140; y < getHeight(); y += 8)
         g.drawHorizontalLine(y, 0.0f, static_cast<float>(getWidth()));
 
     g.setColour(Theme::border().withAlpha(0.35f));
@@ -85,7 +88,8 @@ void SolarisSilverlineAudioProcessorEditor::paint(juce::Graphics& g)
 void SolarisSilverlineAudioProcessorEditor::resized()
 {
     auto bounds = getLocalBounds();
-    navigation.setBounds(bounds.removeFromTop(68));
+    navigation.setBounds(bounds.removeFromTop(64));
+    globalStrip.setBounds(bounds.removeFromTop(76));
 
     auto content = bounds.reduced(8, 6);
     preFxPanel.setBounds(content);

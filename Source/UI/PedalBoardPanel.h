@@ -4,28 +4,27 @@
 #include <array>
 #include <memory>
 #include <vector>
-#include "Controls.h"
+#include "Theme.h"
 
 namespace solaris::ui
 {
     class PedalCard final : public juce::Component
     {
     public:
-        PedalCard(juce::String displayName,
+        PedalCard(int signalOrder,
+                  juce::String displayName,
                   juce::String familyName,
                   juce::Colour finishColour,
                   std::array<juce::String, 3> controlNames);
 
         void paint(juce::Graphics&) override;
-        void resized() override;
 
     private:
+        int order = 0;
         juce::String name;
         juce::String family;
         juce::Colour finish;
-        std::array<std::unique_ptr<SolarisKnob>, 3> knobs;
-        SolarisButton bypass { "ENGAGE", true };
-        bool enabled = false;
+        std::array<juce::String, 3> controls;
     };
 
     class PedalBoardPanel final : public juce::Component

@@ -5,13 +5,15 @@
 #include <memory>
 #include "Controls.h"
 
+class SolarisSilverlineAudioProcessor;
+
 namespace solaris::ui
 {
     class AmpPanel final : public juce::Component,
                            private juce::Timer
     {
     public:
-        explicit AmpPanel(juce::AudioProcessorValueTreeState& state);
+        explicit AmpPanel(SolarisSilverlineAudioProcessor& processor);
         ~AmpPanel() override;
 
         void paint(juce::Graphics&) override;
@@ -22,11 +24,20 @@ namespace solaris::ui
 
         void timerCallback() override;
         void setParameterNormalized(const juce::String& id, float normalizedValue);
+        void refreshModelStatus();
+        void loadNeuralModelFromDialog();
 
+        SolarisSilverlineAudioProcessor& processor;
         juce::AudioProcessorValueTreeState& parameterState;
 
+        SolarisButton analogueModelButton { "SILVERLINE 68", true };
+        SolarisButton neuralModelButton { "NEURAL MODEL", true };
+        SolarisButton loadModelButton { "LOAD MODEL", false };
         SolarisButton voicingButton { "CUSTOM", true };
         SolarisButton bypassButton { "AMP ON", true };
+
+        juce::Label modelStatusLabel;
+        juce::Label modelNameLabel;
 
         SolarisKnob volume { "VOLUME", "", 0.0, 10.0, 0.1, 4.5 };
         SolarisKnob bass { "BASS", "", 0.0, 10.0, 0.1, 5.0 };
@@ -41,5 +52,6 @@ namespace solaris::ui
         std::unique_ptr<SliderAttachment> reverbAttachment;
         std::unique_ptr<SliderAttachment> tremoloSpeedAttachment;
         std::unique_ptr<SliderAttachment> tremoloIntensityAttachment;
+        std::unique_ptr<juce::FileChooser> modelChooser;
     };
 }

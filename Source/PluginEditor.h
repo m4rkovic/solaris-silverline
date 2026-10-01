@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "UI/NavigationBar.h"
+#include "UI/GlobalStrip.h"
 #include "UI/AmpPanel.h"
 #include "UI/PedalBoardPanel.h"
 #include "UI/CabPanel.h"
@@ -27,6 +28,7 @@ private:
     SolarisSilverlineAudioProcessor& processor;
 
     solaris::ui::NavigationBar navigation;
+    solaris::ui::GlobalStrip globalStrip;
     solaris::ui::PedalBoardPanel preFxPanel { false };
     solaris::ui::AmpPanel ampPanel;
     solaris::ui::CabPanel cabPanel;
@@ -35,6 +37,7 @@ private:
     solaris::ui::TunerOverlay tunerOverlay;
 
     solaris::ui::NavigationBar::Page currentPage = solaris::ui::NavigationBar::Page::amp;
+    juce::TooltipWindow tooltipWindow;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SolarisSilverlineAudioProcessorEditor)
 };

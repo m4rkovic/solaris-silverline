@@ -9,6 +9,7 @@ namespace solaris::ui
           accentWhenActive(useAccentWhenActive)
     {
         setMouseCursor(juce::MouseCursor::PointingHandCursor);
+        setWantsKeyboardFocus(true);
     }
 
     void SolarisButton::setActive(bool shouldBeActive)
@@ -138,6 +139,7 @@ namespace solaris::ui
                                    juce::MathConstants<float>::pi * 2.80f, true);
         slider.setMouseDragSensitivity(190);
         slider.setDoubleClickReturnValue(true, initialValue);
+        slider.setWantsKeyboardFocus(true);
         slider.setLookAndFeel(&lookAndFeel);
         slider.onValueChange = [this]
         {
@@ -170,7 +172,8 @@ namespace solaris::ui
 
     void SolarisKnob::updateValueLabel()
     {
-        const auto decimals = slider.getInterval() >= 1.0 ? 0 : 1;
+        const auto interval = slider.getInterval();
+        const auto decimals = interval >= 1.0 ? 0 : (interval >= 0.1 ? 1 : 2);
         value.setText(juce::String(slider.getValue(), decimals) + suffix,
                       juce::dontSendNotification);
     }

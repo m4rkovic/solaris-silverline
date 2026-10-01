@@ -24,12 +24,17 @@ namespace solaris::ui
 
     private:
         juce::String noteNameForMidi(int midiNote) const;
+        juce::String confidenceLabel(float confidence) const;
 
         juce::Rectangle<float> cardBounds;
         SolarisButton closeButton { "CLOSE", false };
         SolarisButton muteButton { "MUTE", true };
 
-        solaris::TunerSnapshot currentSnapshot {};
+        solaris::TunerSnapshot displayedSnapshot {};
         bool muted = false;
+
+        int candidateNote = -1;
+        int candidateFrames = 0;
+        int invalidFrames = 0;
     };
 }
