@@ -37,7 +37,10 @@ namespace solaris::ui
 
         g.setColour(Theme::textMuted());
         g.setFont(juce::FontOptions(9.0f, juce::Font::bold));
-        g.drawText(juce::String(order, 2),
+        const auto orderText = order < 10
+            ? juce::String("0") + juce::String(order)
+            : juce::String(order);
+        g.drawText(orderText,
                    content.removeFromTop(18.0f).toNearestInt(),
                    juce::Justification::centredLeft, false);
 
