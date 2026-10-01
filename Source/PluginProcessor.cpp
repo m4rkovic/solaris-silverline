@@ -143,22 +143,26 @@ void SolarisSilverlineAudioProcessor::collapseGuitarInputToMono(juce::AudioBuffe
     if (buffer.getNumChannels() < 2 || buffer.getNumSamples() <= 0)
         return;
 
-   #if JucePlugin_Build_Standalone
-    // The official NAM standalone treats the guitar path as mono and catches
-    // whichever physical input is actually carrying the instrument. Choosing
-    // the hotter block avoids summing an unused interface input full of noise
-    // and preserves level when the guitar is plugged into Input 1 or Input 2.
-    const auto leftPeak = buffer.getMagnitude(0, 0, buffer.getNumSamples());
-    const auto rightPeak = buffer.getMagnitude(1, 0, buffer.getNumSamples());
-    const auto sourceChannel = rightPeak > leftPeak ? 1 : 0;
-
-    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+    if (wrapperType == juce::AudioProcessor::wrapperType_Standalone)
     {
-        const auto mono = buffer.getSample(sourceChannel, sample);
-        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
-            buffer.setSample(channel, sample, mono);
+        // The official NAM standalone treats the guitar path as mono and catches
+        // whichever physical input is actually carrying the instrument. Choosing
+        // the hotter block avoids summing an unused interface input full of noise
+        // and preserves level when the guitar is plugged into Input 1 or Input 2.
+        const auto leftPeak = buffer.getMagnitude(0, 0, buffer.getNumSamples());
+        const auto rightPeak = buffer.getMagnitude(1, 0, buffer.getNumSamples());
+        const auto sourceChannel = rightPeak > leftPeak ? 1 : 0;
+
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        {
+            const auto mono = buffer.getSample(sourceChannel, sample);
+            for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+                buffer.setSample(channel, sample, mono);
+        }
+
+        return;
     }
-   #else
+
     // In a DAW a stereo source is collapsed conservatively, matching NAM's
     // mono-internal processing model without doubling correlated inputs.
     for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
@@ -168,7 +172,6 @@ void SolarisSilverlineAudioProcessor::collapseGuitarInputToMono(juce::AudioBuffe
         for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
             buffer.setSample(channel, sample, mono);
     }
-   #endif
 }
 
 void SolarisSilverlineAudioProcessor::resetOutputDcBlocker() noexcept
@@ -196,12 +199,13 @@ void SolarisSilverlineAudioProcessor::applyOutputSafetyAndDcBlock(juce::AudioBuf
             if (!std::isfinite(y))
                 y = 0.0f;
 
-           #if JucePlugin_Build_Standalone
-            // A hardware output cannot represent samples beyond full scale.
-            // NAM's standalone follows the same principle: protect the device
-            // output instead of letting runaway DSP become digital crackle.
-            y = juce::jlimit(-0.999f, 0.999f, y);
-           #endif
+            if (wrapperType == juce::AudioProcessor::wrapperType_Standalone)
+            {
+                // A hardware output cannot represent samples beyond full scale.
+                // NAM's standalone follows the same principle: protect the device
+                // output instead of letting runaway DSP become digital crackle.
+                y = juce::jlimit(-0.999f, 0.999f, y);
+            }
 
             previousOutput = y;
             samples[sample] = y;
