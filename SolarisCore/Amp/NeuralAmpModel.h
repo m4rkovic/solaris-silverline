@@ -3,10 +3,17 @@
 #include "IAmpModel.h"
 #include <JuceHeader.h>
 #include <memory>
+#include <cstddef>
 
 namespace NeuralAudio
 {
     class NeuralModel;
+}
+
+namespace dsp
+{
+    template <typename T, int NCHANS, std::size_t A>
+    class ResamplingContainer;
 }
 
 namespace solaris
@@ -40,6 +47,7 @@ namespace solaris
         void setParameters(const AmpParameters& parameters) noexcept override;
         void process(juce::AudioBuffer<float>& buffer) noexcept override;
         void reset() noexcept override;
+        int latencySamples() const noexcept override { return resamplerLatency; }
 
         // Non realtime API. File parsing, model construction and prewarming happen here.
         bool loadFromFile(const juce::File& modelFile);
@@ -54,14 +62,16 @@ namespace solaris
         AmpMetadata info;
         AmpParameters currentParameters {};
         std::unique_ptr<NeuralAudio::NeuralModel> model;
+        std::unique_ptr<dsp::ResamplingContainer<float, 1, 12>> resampler;
 
         juce::AudioBuffer<float> inputScratch;
         juce::AudioBuffer<float> outputScratch;
         juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> enabledMix;
 
         double sampleRate = 48000.0;
-        double loadedForHostSampleRate = 0.0;
+        double nativeModelSampleRate = 48000.0;
         std::size_t maximumBlockSize = 512;
+        int resamplerLatency = 0;
         float inputGain = 1.0f;
         float outputGain = 1.0f;
         NeuralModelMetadata loadedMetadata;
