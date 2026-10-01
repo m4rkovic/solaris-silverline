@@ -3,17 +3,10 @@
 #include "IAmpModel.h"
 #include <JuceHeader.h>
 #include <memory>
-#include <cstddef>
 
 namespace NeuralAudio
 {
     class NeuralModel;
-}
-
-namespace dsp
-{
-    template <typename T, int NCHANS, std::size_t A>
-    class ResamplingContainer;
 }
 
 namespace solaris
@@ -61,8 +54,10 @@ namespace solaris
     private:
         AmpMetadata info;
         AmpParameters currentParameters {};
+        struct ResamplerHolder;
+
         std::unique_ptr<NeuralAudio::NeuralModel> model;
-        std::unique_ptr<dsp::ResamplingContainer<float, 1, 12>> resampler;
+        std::unique_ptr<ResamplerHolder> resampler;
 
         juce::AudioBuffer<float> inputScratch;
         juce::AudioBuffer<float> outputScratch;
