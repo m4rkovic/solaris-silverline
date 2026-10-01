@@ -174,6 +174,7 @@ private:
     std::array<float, 2> outputDcPreviousInput {};
     std::array<float, 2> outputDcPreviousOutput {};
     float outputDcCoefficient = 0.0f;
+    int standaloneInputChannel = 0;
 
     mutable juce::CriticalSection ampStateLock;
     juce::String desiredAmpBackend { "silverline68" };
