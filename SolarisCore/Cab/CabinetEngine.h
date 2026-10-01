@@ -14,6 +14,17 @@ namespace solaris
         juce::String displayName;
     };
 
+    struct CabinetIRStatus
+    {
+        juce::String sourcePath;
+        juce::String error;
+        double sourceSampleRate = 0.0;
+        juce::int64 lengthInSamples = 0;
+        int channels = 0;
+        bool active = false;
+        bool missing = false;
+    };
+
     class CabinetEngine
     {
     public:
@@ -31,8 +42,12 @@ namespace solaris
         void setPhaseInverted(CabinetIRSlot slot, bool shouldInvert) noexcept;
         void setSlotActive(CabinetIRSlot slot, bool active) noexcept;
 
-        // These functions are deliberately non-audio-thread APIs. JUCE's convolution
-        // message queue handles the safe handoff to the processing engine.
+        juce::Result loadImpulseResponseFromFile(CabinetIRSlot slot,
+                                                 const juce::File& file,
+                                                 bool trim = true,
+                                                 bool normalise = true,
+                                                 std::size_t expectedSize = 0);
+
         void requestImpulseResponseFromFile(CabinetIRSlot slot,
                                             const juce::File& file,
                                             bool stereo,
@@ -47,12 +62,27 @@ namespace solaris
                                           bool trim = true,
                                           bool normalise = true);
 
+        CabinetIRStatus getSlotStatus(CabinetIRSlot slot) const;
         int getLatencySamples() const noexcept;
         juce::ValueTree createState() const;
         void restoreState(const juce::ValueTree& state);
 
     private:
+        struct Validation
+        {
+            juce::Result result = juce::Result::ok();
+            double sampleRate = 0.0;
+            juce::int64 lengthInSamples = 0;
+            int channels = 0;
+        };
+
+        static Validation validateWavIR(const juce::File& file);
         juce::dsp::Convolution& convolverFor(CabinetIRSlot slot) noexcept;
+        std::atomic<bool>& activeFor(CabinetIRSlot slot) noexcept;
+        std::atomic<bool>& stereoFor(CabinetIRSlot slot) noexcept;
+        std::atomic<bool>& phaseFor(CabinetIRSlot slot) noexcept;
+        CabinetIRStatus& statusFor(CabinetIRSlot slot) noexcept;
+        const CabinetIRStatus& statusFor(CabinetIRSlot slot) const noexcept;
 
         juce::dsp::ConvolutionMessageQueue messageQueue { 8 };
         juce::dsp::Convolution convolutionA { messageQueue };
@@ -74,7 +104,7 @@ namespace solaris
 
         mutable juce::CriticalSection metadataLock;
         juce::String cabinetModelId;
-        juce::String sourcePathA;
-        juce::String sourcePathB;
+        CabinetIRStatus statusA;
+        CabinetIRStatus statusB;
     };
 }

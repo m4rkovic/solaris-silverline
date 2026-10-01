@@ -6,36 +6,62 @@ on:
     branches: [ main ]
 
 jobs:
-  linux-vst3:
-    runs-on: ubuntu-latest
+  linux-release:
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
         neural: [ON, OFF]
-
-    name: linux-vst3 / NeuralAudio ${{ matrix.neural }}
+    name: linux-release / NeuralAudio ${{ matrix.neural }}
 
     steps:
       - uses: actions/checkout@v4
-
       - name: Install JUCE build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libasound2-dev \
-            libfontconfig1-dev \
-            libfreetype6-dev \
-            libgl1-mesa-dev \
-            libx11-dev \
-            libxcursor-dev \
-            libxinerama-dev \
-            libxrandr-dev
-
-      - name: Configure
+            libasound2-dev libfontconfig1-dev libfreetype6-dev libgl1-mesa-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev
+      - name: Configure Release
         run: >
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=Release
           -DSOLARIS_ENABLE_NEURAL_AUDIO=${{ matrix.neural }}
+          -DSOLARIS_BUILD_BENCHMARK=ON
+      - name: Build VST3, Standalone and benchmark
+        run: cmake --build build --config Release --target SolarisSilverline_VST3 SolarisSilverline_Standalone SolarisBenchmark --parallel 2
+      - name: Analogue offline benchmark smoke test
+        run: ./build/SolarisBenchmark --seconds 1
+      - name: Package release artifacts
+        run: bash scripts/package.sh build
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SolarisSilverline-linux-neural-${{ matrix.neural }}
+          path: dist/
+          if-no-files-found: error
 
-      - name: Build VST3
-        run: cmake --build build --config Release --target SolarisSilverline_VST3 --parallel 2
+  windows-release:
+    runs-on: windows-2022
+    name: windows-msvc-release / NeuralAudio ON
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure Release
+        shell: pwsh
+        run: cmake -S . -B build -A x64 -DSOLARIS_ENABLE_NEURAL_AUDIO=ON -DSOLARIS_BUILD_BENCHMARK=ON
+      - name: Build VST3, Standalone and benchmark
+        shell: pwsh
+        run: cmake --build build --config Release --target SolarisSilverline_VST3 SolarisSilverline_Standalone SolarisBenchmark --parallel 2
+      - name: Analogue offline benchmark smoke test
+        shell: pwsh
+        run: .\build\Release\SolarisBenchmark.exe --seconds 1
+      - name: Package release artifacts
+        shell: pwsh
+        run: .\scripts\package.ps1 -BuildDir build -Config Release
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SolarisSilverline-windows-neural-ON
+          path: dist/
+          if-no-files-found: error

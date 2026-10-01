@@ -87,3 +87,35 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ## Models and impulse responses
 
 A `.nam` file or cabinet impulse response can have its own copyright/licensing terms independent of the runtime code. Do not bundle third-party models or IRs unless redistribution rights are explicitly documented.
+
+
+## Release build pins and validation tooling
+
+The v0.4.0 release foundation pins JUCE 8.0.15 and NeuralAudio commit
+`048d195c5113116e07d5ac25844b21380323db6f`. NeuralAudio's recursive
+submodules supply the NAMCore, RTNeural, math_approx and nlohmann/json versions
+used by that exact build input. These dependencies remain subject to their
+respective licenses listed above.
+
+### pluginval
+
+- Project: pluginval by Tracktion
+- Validation version: v1.0.4
+- License: GNU General Public License v3.0
+- Usage: CI/release validation only
+- Distribution: pluginval is downloaded by the release-validation workflow and
+  is not linked into, bundled with, or redistributed as part of Solaris Silverline.
+
+### GitHub Actions
+
+The repository uses GitHub-maintained `actions/checkout@v4` and
+`actions/upload-artifact@v4` solely as CI infrastructure. They are not part of
+the shipped plugin binaries.
+
+## Model and IR asset policy
+
+Solaris Silverline v0.4.0 does not bundle third-party NAM model files or cabinet
+IR audio assets. The factory IR catalog infrastructure intentionally ships empty.
+A NAM model or IR may only be added to a release resource pack after its
+redistribution rights and required attribution have been explicitly documented
+here.
