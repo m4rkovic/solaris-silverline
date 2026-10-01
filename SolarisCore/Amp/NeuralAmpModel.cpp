@@ -19,6 +19,21 @@ namespace dsp
 
 namespace solaris
 {
+    struct NeuralAmpModel::ResamplerHolder
+    {
+       #if SOLARIS_ENABLE_NEURAL_AUDIO
+        explicit ResamplerHolder(double renderingSampleRate)
+            : processor(std::make_unique<dsp::ResamplingContainer<float, 1, 12>>(
+                renderingSampleRate))
+        {
+        }
+
+        std::unique_ptr<dsp::ResamplingContainer<float, 1, 12>> processor;
+       #else
+        explicit ResamplerHolder(double) {}
+       #endif
+    };
+
     namespace
     {
         int modelBlockCapacity(std::size_t hostBlockSize,
@@ -64,10 +79,9 @@ namespace solaris
 
             if (std::abs(nativeModelSampleRate - sampleRate) > 1.0)
             {
-                resampler = std::make_unique<dsp::ResamplingContainer<float, 1, 12>>(
-                    nativeModelSampleRate);
-                resampler->Reset(sampleRate, static_cast<int>(maximumBlockSize));
-                resamplerLatency = resampler->GetLatency();
+                resampler = std::make_unique<ResamplerHolder>(nativeModelSampleRate);
+                resampler->processor->Reset(sampleRate, static_cast<int>(maximumBlockSize));
+                resamplerLatency = resampler->processor->GetLatency();
             }
 
             loadedMetadata.effectiveSampleRate = sampleRate;
@@ -155,14 +169,14 @@ namespace solaris
                 return false;
             }
 
-            std::unique_ptr<dsp::ResamplingContainer<float, 1, 12>> loadedResampler;
+            std::unique_ptr<ResamplerHolder> loadedResampler;
             int loadedResamplerLatency = 0;
             if (std::abs(sourceRate - sampleRate) > 1.0)
             {
-                loadedResampler =
-                    std::make_unique<dsp::ResamplingContainer<float, 1, 12>>(sourceRate);
-                loadedResampler->Reset(sampleRate, static_cast<int>(maximumBlockSize));
-                loadedResamplerLatency = loadedResampler->GetLatency();
+                loadedResampler = std::make_unique<ResamplerHolder>(sourceRate);
+                loadedResampler->processor->Reset(
+                    sampleRate, static_cast<int>(maximumBlockSize));
+                loadedResamplerLatency = loadedResampler->processor->GetLatency();
             }
 
             NeuralModelMetadata metadata;
@@ -235,7 +249,7 @@ namespace solaris
 
             try
             {
-                resampler->ProcessBlock(
+                resampler->processor->ProcessBlock(
                     inputPointers,
                     outputPointers,
                     numSamples,
@@ -282,8 +296,9 @@ namespace solaris
         {
             try
             {
-                resampler->Reset(sampleRate, static_cast<int>(maximumBlockSize));
-                resamplerLatency = resampler->GetLatency();
+                resampler->processor->Reset(
+                    sampleRate, static_cast<int>(maximumBlockSize));
+                resamplerLatency = resampler->processor->GetLatency();
             }
             catch (...)
             {
