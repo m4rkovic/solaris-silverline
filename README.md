@@ -1,149 +1,146 @@
 # Solaris Silverline
 
-**Solaris Silverline** is a boutique guitar amp/effects VST project built with C++20 and JUCE.
+Solaris Silverline is a C++20/JUCE guitar amplifier and effects-suite project focused on a small, high-quality signal chain rather than a large collection of generic models.
 
-The first rig targets an American silver-panel, vintage clean / edge-of-breakup character. The architecture is intentionally modular so additional amp models can be added later without rewriting the plugin shell.
+Current development version: **0.3.0 integration foundation**.
 
-## Planned UI
+## Current signal path
 
-Top navigation:
+```
+Input
+  -> input gain / calibration
+  -> PRE FX slot
+  -> amp engine
+  -> cabinet IR engine
+  -> POST FX slot
+  -> 4-band parametric EQ + HPF/LPF
+  -> output gain
+```
 
-`PRE FX | AMP | CAB | POST FX | EQ`
+The PRE FX and POST FX slots are intentionally transparent in v0.3. Their UI exists, but the pedal DSP implementations are the next development phase.
 
-Persistent utilities:
+## Amp engine
 
-`Preset Browser | Tuner | Input | Output | Settings`
+The amp layer is model-agnostic through `IAmpModel` and `AmpRegistry`.
 
-### PRE FX
-- Compressor inspired by the Boss CS-2 control philosophy
-- Turbo-style overdrive
-- 3-band analog-style distortion
-- RAT-style drive
-- Big Muff-style fuzz
+Two backends are supported:
 
-### AMP
-- Silverline 68
-- Future amp models are loaded through a generic amp interface/registry
+- **Silverline 68 Analogue DSP** - the default backend. It uses oversampled nonlinear processing, dynamic/sag-inspired behaviour, tone shaping, tremolo and a compact spring-style reverb prototype.
+- **Neural NAM backend** - optional NeuralAudio integration for loading Neural Amp Modeler (`.nam`) captures without replacing the analogue backend.
 
-### CAB
-- 2x10-focused cabinet workflow
-- Two movable microphones
-- Position / distance / blend / phase
-- Custom IR loading
+Neural models are loaded and pre-warmed outside the real-time audio callback. The audio thread only processes already-prepared models. The current neural backend requires the NAM model sample rate to match the host sample rate exactly; dedicated arbitrary-rate conversion is planned instead of silently running a model at the wrong rate.
 
-### POST FX
-- Phaser
-- Chorus
-- Tremolo
-- Analog-style delay
-- Multi-mode reverb
+No NAM capture is bundled yet. This avoids shipping a third-party capture with unclear redistribution/model rights.
 
-### EQ
-- Full parametric EQ
-- HPF / LPF
-- Draggable bands
-- Spectrum analyzer
+## Cabinet
 
-## What works in v0.1
+The cabinet engine provides two independent JUCE convolution slots with:
 
-- VST3 target
-- Standalone target
-- CMake project
-- JUCE fetched automatically
-- Resizable placeholder GUI
-- Modular amp interface and registry
-- Silverline 68 placeholder model
-- Audio passthrough
-- Plugin state skeleton
+- mono or stereo IRs
+- Mic A / Mic B blend
+- phase inversion
+- wet/dry control
+- preset-state persistence for external IR paths
 
-The goal of v0.1 is intentionally boring: **build successfully, load in Studio One, pass audio cleanly.**
+IR loading is a non-audio-thread operation. The processing callback only performs convolution and mixing.
 
-## Requirements
+The UI already presents a 2x10 dual-mic concept. Position and distance controls remain disabled until a real multi-IR interpolation/morphing layer exists.
 
-- Windows 10/11 x64
-- Visual Studio Community with **Desktop development with C++**
-- Windows 11 SDK
+## EQ
+
+Post-rig EQ includes:
+
+- HPF
+- LPF
+- four parametric peaking bands
+- frequency / gain / Q parameters
+- smoothed coefficient transitions
+- draggable UI nodes tied to host-automatable parameters
+
+The spectrum line in the current UI is decorative; a real FFT analyser is a later phase.
+
+## Tuner
+
+The tuner engine runs analysis on a worker thread and publishes a lightweight thread-safe snapshot to the UI. The overlay displays detected note, frequency, cents and confidence. Tuner mute clears the processed output while analysis continues from the input signal.
+
+## UI
+
+The current UI is a modular dark/silver/amber design with dedicated pages for:
+
+- PRE FX
+- AMP
+- CAB
+- POST FX
+- EQ
+
+The AMP and EQ controls are bound to APVTS parameters so automation and session recall stay in sync with the engine.
+
+## Presets / state
+
+Plugin state uses a versioned preset wrapper with `schemaVersion`, amp model ID, APVTS parameters, cabinet state, EQ state and a reserved pedal-state section.
+
+## Build
+
+Requirements:
+
 - CMake 3.24+
+- C++20 compiler
 - Git
+- internet access during initial dependency fetch
 
-JUCE is downloaded automatically during CMake configure.
-
-## First build
-
-Open **Developer PowerShell for Visual Studio**, then:
+Windows:
 
 ```powershell
-cd path\to\SolarisSilverline
-.\scripts\configure.ps1
-.\scripts\build.ps1
+./scripts/configure.ps1
+./scripts/build.ps1
 ```
 
-The build output will be under:
-
-```text
-build\SolarisSilverline_artefacts\Release\
-```
-
-Because `COPY_PLUGIN_AFTER_BUILD` is enabled, JUCE will also attempt to copy the VST3 to the normal system VST3 location.
-
-Typical Windows VST3 location:
-
-```text
-C:\Program Files\Common Files\VST3
-```
-
-Then rescan plugins in Studio One.
-
-## Verify toolchain
+Or directly:
 
 ```powershell
-.\scripts\check-env.ps1
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Release --target SolarisSilverline_VST3
 ```
 
-## Architecture
+Linux:
 
-```text
-Solaris Silverline
-│
-├── Host / Plugin Shell
-├── SolarisCore
-│   ├── DSP
-│   ├── Effects
-│   ├── Amp
-│   ├── Cab
-│   ├── EQ
-│   ├── Tuner
-│   └── Presets
-│
-└── Silverline
-    ├── AmpModels
-    ├── Pedals
-    └── Assets
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target SolarisSilverline_VST3 --parallel
 ```
 
-`SolarisCore` must stay product-agnostic. Product-specific models/assets belong under `Silverline`.
+NeuralAudio/NAM can be disabled for a lighter development build:
 
-## Next milestones
-
-1. Proper parameter/state architecture
-2. Input/output gain and meters
-3. Tab/navigation visual system
-4. Tuner
-5. Silverline 68 amp engine
-6. Cabinet + convolution
-7. PRE FX
-8. POST FX
-9. Parametric EQ
-10. Preset browser
-11. Performance, validation and release builds
-
-## Git
-
-```powershell
-git init
-git add .
-git commit -m "Initial Solaris Silverline skeleton"
-git branch -M main
-git remote add origin YOUR_GITHUB_REPO_URL
-git push -u origin main
+```bash
+cmake -S . -B build -DSOLARIS_ENABLE_NEURAL_AUDIO=OFF
 ```
+
+## Development status
+
+Working foundation:
+
+- modular amp registry
+- Silverline 68 analogue DSP
+- optional NeuralAudio/NAM backend
+- dual-slot cabinet convolution
+- 4-band post EQ
+- worker-thread tuner
+- versioned state/preset infrastructure
+- premium modular UI shell
+- VST3 + Standalone targets
+
+Next priorities:
+
+1. production PRE FX and POST FX pedal DSP
+2. bundled/licensed Silverline 2x10 IR pack
+3. NAM model import/browser UI and model metadata
+4. sample-rate conversion strategy for neural models
+5. real spectrum analyser and input/output metering
+6. preset browser and factory presets
+7. Windows plugin validation, performance profiling and installer
+
+## Third-party dependencies
+
+See `THIRD_PARTY_NOTICES.md`.
+
+Before distributing a proprietary/commercial build, verify that the selected JUCE licensing terms and every bundled model/IR asset permit that distribution.

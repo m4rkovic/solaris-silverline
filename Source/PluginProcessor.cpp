@@ -1,6 +1,22 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "../Silverline/AmpModels/Silverline68Amp.h"
+#include "../SolarisCore/Amp/NeuralAmpModel.h"
+#include "../SolarisCore/Presets/PresetState.h"
+#include <cmath>
+
+namespace
+{
+    float loadParameter(const std::atomic<float>* value, float fallback = 0.0f) noexcept
+    {
+        return value != nullptr ? value->load(std::memory_order_relaxed) : fallback;
+    }
+
+    bool loadBool(const std::atomic<float>* value, bool fallback = false) noexcept
+    {
+        return loadParameter(value, fallback ? 1.0f : 0.0f) >= 0.5f;
+    }
+}
 
 SolarisSilverlineAudioProcessor::SolarisSilverlineAudioProcessor()
     : AudioProcessor(BusesProperties()
@@ -8,68 +24,287 @@ SolarisSilverlineAudioProcessor::SolarisSilverlineAudioProcessor()
         .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       parameters(*this, nullptr, "PARAMETERS", createParameterLayout())
 {
-    // Silverline 68 is the first amp, but the registry is intentionally generic.
-    ampRegistry.registerModel(std::make_unique<solaris::Silverline68Amp>());
+    ampRegistry.registerModelType<solaris::Silverline68Amp>();
+    ampRegistry.registerModelType<solaris::NeuralAmpModel>();
     ampRegistry.select("silverline68");
+
+    cabinetEngine.setCabinetModelId("silverline-2x10");
+    cacheParameterPointers();
+}
+
+void SolarisSilverlineAudioProcessor::cacheParameterPointers()
+{
+    inputGainParameter = parameters.getRawParameterValue(solaris::ParameterIDs::inputGain);
+    outputGainParameter = parameters.getRawParameterValue(solaris::ParameterIDs::outputGain);
+    ampEnabledParameter = parameters.getRawParameterValue(solaris::ParameterIDs::ampEnabled);
+    ampChannelParameter = parameters.getRawParameterValue(solaris::ParameterIDs::ampChannel);
+    ampVolumeParameter = parameters.getRawParameterValue(solaris::ParameterIDs::ampVolume);
+    ampBassParameter = parameters.getRawParameterValue(solaris::ParameterIDs::ampBass);
+    ampTrebleParameter = parameters.getRawParameterValue(solaris::ParameterIDs::ampTreble);
+    ampReverbParameter = parameters.getRawParameterValue(solaris::ParameterIDs::ampReverb);
+    ampTremoloSpeedParameter = parameters.getRawParameterValue(solaris::ParameterIDs::ampTremoloSpeed);
+    ampTremoloIntensityParameter = parameters.getRawParameterValue(solaris::ParameterIDs::ampTremoloIntensity);
+
+    cabWetParameter = parameters.getRawParameterValue("cabWet");
+    cabMicBlendParameter = parameters.getRawParameterValue("cabMicBlend");
+    cabPhaseBParameter = parameters.getRawParameterValue("cabPhaseB");
+
+    eqHpfBypassParameter = parameters.getRawParameterValue("eqHpfBypass");
+    eqHpfFrequencyParameter = parameters.getRawParameterValue("eqHpfFrequency");
+    eqLpfBypassParameter = parameters.getRawParameterValue("eqLpfBypass");
+    eqLpfFrequencyParameter = parameters.getRawParameterValue("eqLpfFrequency");
+
+    for (int i = 0; i < solaris::ParametricEQ::numBands; ++i)
+    {
+        const auto prefix = juce::String("eqBand") + juce::String(i + 1);
+        auto& band = eqBandParameters[static_cast<std::size_t>(i)];
+        band.bypass = parameters.getRawParameterValue(prefix + "Bypass");
+        band.frequency = parameters.getRawParameterValue(prefix + "Frequency");
+        band.gain = parameters.getRawParameterValue(prefix + "Gain");
+        band.q = parameters.getRawParameterValue(prefix + "Q");
+    }
 }
 
 void SolarisSilverlineAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
-    solaris::AmpPrepareSpec spec;
-    spec.sampleRate = sampleRate;
-    spec.maximumBlockSize = static_cast<juce::uint32>(samplesPerBlock);
-    spec.numChannels = static_cast<juce::uint32>(getTotalNumOutputChannels());
+    const auto channels = static_cast<juce::uint32>(getTotalNumOutputChannels());
+    const juce::dsp::ProcessSpec dspSpec {
+        sampleRate,
+        static_cast<juce::uint32>(samplesPerBlock),
+        channels
+    };
 
-    ampRegistry.prepare(spec);
+    inputGainStage.prepare(dspSpec);
+    inputGainStage.setRampDurationSeconds(0.020);
+    inputGainStage.setGainDecibels(loadParameter(inputGainParameter));
+
+    preFxStage.prepare(dspSpec);
+
+    lastAmpSpec.sampleRate = sampleRate;
+    lastAmpSpec.maximumBlockSize = static_cast<juce::uint32>(samplesPerBlock);
+    lastAmpSpec.numChannels = channels;
+    ampRegistry.prepare(lastAmpSpec);
+    ampRegistry.setParameters(readAmpParameters());
+
+    cabinetEngine.prepare(dspSpec);
+    syncCabParameters();
+
+    postFxStage.prepare(dspSpec);
+
+    postEq.prepare(sampleRate);
+    syncPostEqParameters();
+
+    tunerEngine.prepare(sampleRate);
+
+    outputGainStage.prepare(dspSpec);
+    outputGainStage.setRampDurationSeconds(0.020);
+    outputGainStage.setGainDecibels(loadParameter(outputGainParameter));
+
+    setLatencySamples(cabinetEngine.getLatencySamples());
+    prepared = true;
 }
 
 void SolarisSilverlineAudioProcessor::releaseResources()
 {
+    prepared = false;
+    tunerEngine.stop();
+    inputGainStage.reset();
+    preFxStage.reset();
     ampRegistry.reset();
+    cabinetEngine.reset();
+    postFxStage.reset();
+    postEq.reset();
+    outputGainStage.reset();
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
 bool SolarisSilverlineAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
-    const auto mainOutput = layouts.getMainOutputChannelSet();
-
-    if (mainOutput != juce::AudioChannelSet::mono()
-        && mainOutput != juce::AudioChannelSet::stereo())
+    const auto output = layouts.getMainOutputChannelSet();
+    if (output != juce::AudioChannelSet::mono() && output != juce::AudioChannelSet::stereo())
         return false;
 
-    return mainOutput == layouts.getMainInputChannelSet();
+    return output == layouts.getMainInputChannelSet();
 }
 #endif
+
+solaris::AmpParameters SolarisSilverlineAudioProcessor::readAmpParameters() const noexcept
+{
+    solaris::AmpParameters result;
+    result.enabled = loadBool(ampEnabledParameter, true);
+    result.channel = loadParameter(ampChannelParameter) >= 0.5f
+        ? solaris::AmpChannel::vintage
+        : solaris::AmpChannel::custom;
+    result.volume = loadParameter(ampVolumeParameter, 4.5f) * 0.1f;
+    result.bass = loadParameter(ampBassParameter, 5.0f) * 0.1f;
+    result.treble = loadParameter(ampTrebleParameter, 5.5f) * 0.1f;
+    result.reverb = loadParameter(ampReverbParameter, 2.0f) * 0.1f;
+    result.tremoloSpeedHz = loadParameter(ampTremoloSpeedParameter, 4.0f);
+    result.tremoloIntensity = loadParameter(ampTremoloIntensityParameter) * 0.1f;
+    result.clampToValidRange();
+    return result;
+}
+
+void SolarisSilverlineAudioProcessor::syncCabParameters() noexcept
+{
+    cabinetEngine.setWetMix(loadParameter(cabWetParameter, 100.0f) * 0.01f);
+    cabinetEngine.setMicBlend(loadParameter(cabMicBlendParameter, 50.0f) * 0.01f);
+    cabinetEngine.setPhaseInverted(solaris::CabinetIRSlot::micB,
+                                   loadBool(cabPhaseBParameter, false));
+}
+
+void SolarisSilverlineAudioProcessor::syncPostEqParameters() noexcept
+{
+    postEq.setHighPass(loadParameter(eqHpfFrequencyParameter, 70.0f),
+                       loadBool(eqHpfBypassParameter, false));
+    postEq.setLowPass(loadParameter(eqLpfFrequencyParameter, 18000.0f),
+                      loadBool(eqLpfBypassParameter, false));
+
+    for (int i = 0; i < solaris::ParametricEQ::numBands; ++i)
+    {
+        const auto& band = eqBandParameters[static_cast<std::size_t>(i)];
+        postEq.setBand(i,
+                       loadParameter(band.frequency, 1000.0f),
+                       loadParameter(band.gain, 0.0f),
+                       loadParameter(band.q, 0.707f),
+                       loadBool(band.bypass, false));
+    }
+}
 
 void SolarisSilverlineAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                                                    juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
 
-    const auto totalNumInputChannels = getTotalNumInputChannels();
-    const auto totalNumOutputChannels = getTotalNumOutputChannels();
-
-    for (auto channel = totalNumInputChannels; channel < totalNumOutputChannels; ++channel)
+    for (auto channel = getTotalNumInputChannels(); channel < getTotalNumOutputChannels(); ++channel)
         buffer.clear(channel, 0, buffer.getNumSamples());
 
-    // V0.1 intentionally behaves as transparent passthrough.
-    // The amp engine is already modular and ready for real DSP in the next milestone.
+    tunerEngine.pushSamples(buffer);
+
+    inputGainStage.setGainDecibels(loadParameter(inputGainParameter));
+    outputGainStage.setGainDecibels(loadParameter(outputGainParameter));
+    ampRegistry.setParameters(readAmpParameters());
+    syncCabParameters();
+    syncPostEqParameters();
+
+    juce::dsp::AudioBlock<float> block(buffer);
+    juce::dsp::ProcessContextReplacing<float> context(block);
+
+    inputGainStage.process(context);
+    preFxStage.process(buffer);
     ampRegistry.process(buffer);
+    cabinetEngine.process(buffer);
+    postFxStage.process(buffer);
+    postEq.process(buffer);
+    outputGainStage.process(context);
+
+    if (tunerMuted.load(std::memory_order_relaxed))
+        buffer.clear();
+}
+
+bool SolarisSilverlineAudioProcessor::loadNeuralAmpModel(const juce::File& modelFile)
+{
+   #if !SOLARIS_ENABLE_NEURAL_AUDIO
+    juce::ignoreUnused(modelFile);
+    return false;
+   #else
+    auto candidate = std::make_unique<solaris::NeuralAmpModel>();
+    if (prepared)
+        candidate->prepare(lastAmpSpec);
+    candidate->setParameters(readAmpParameters());
+
+    if (!candidate->loadFromFile(modelFile))
+        return false;
+
+    std::unique_ptr<solaris::IAmpModel> replacement = std::move(candidate);
+    {
+        const juce::ScopedLock lock(getCallbackLock());
+        ampRegistry.swapSelected(replacement);
+    }
+
+    parameters.state.setProperty("neuralModelPath", modelFile.getFullPathName(), nullptr);
+    return true;
+   #endif
+}
+
+bool SolarisSilverlineAudioProcessor::useAnalogueAmp()
+{
+    auto candidate = std::make_unique<solaris::Silverline68Amp>();
+    if (prepared)
+        candidate->prepare(lastAmpSpec);
+    candidate->setParameters(readAmpParameters());
+
+    std::unique_ptr<solaris::IAmpModel> replacement = std::move(candidate);
+    {
+        const juce::ScopedLock lock(getCallbackLock());
+        ampRegistry.swapSelected(replacement);
+    }
+
+    return true;
+}
+
+juce::String SolarisSilverlineAudioProcessor::getActiveAmpModelId() const
+{
+    const auto* current = ampRegistry.current();
+    return current != nullptr ? juce::String(current->metadata().id) : juce::String();
+}
+
+juce::AudioProcessorEditor* SolarisSilverlineAudioProcessor::createEditor()
+{
+    return new SolarisSilverlineAudioProcessorEditor(*this);
+}
+
+double SolarisSilverlineAudioProcessor::getTailLengthSeconds() const
+{
+    return ampRegistry.tailLengthSeconds();
 }
 
 void SolarisSilverlineAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
-    const auto state = parameters.copyState();
+    const auto state = solaris::PresetState::create(
+        parameters,
+        getActiveAmpModelId(),
+        cabinetEngine.createState(),
+        postEq.createState());
+
     if (auto xml = state.createXml())
         copyXmlToBinary(*xml, destData);
 }
 
 void SolarisSilverlineAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
-    if (auto xmlState = getXmlFromBinary(data, sizeInBytes))
+    if (auto xml = getXmlFromBinary(data, sizeInBytes))
     {
-        if (xmlState->hasTagName(parameters.state.getType()))
-            parameters.replaceState(juce::ValueTree::fromXml(*xmlState));
+        const auto state = solaris::PresetState::normalise(
+            juce::ValueTree::fromXml(*xml), parameters.state.getType());
+
+        if (!state.isValid())
+            return;
+
+        const auto parameterState = solaris::PresetState::parameterState(
+            state, parameters.state.getType());
+
+        if (parameterState.isValid())
+            parameters.replaceState(parameterState.createCopy());
+
+        cabinetEngine.restoreState(solaris::PresetState::cabinetState(state));
+        postEq.restoreState(solaris::PresetState::eqState(state));
+
+        const auto requestedAmp = solaris::PresetState::ampModelId(state);
+        if (requestedAmp == "neural-nam")
+        {
+            const auto modelPath = parameters.state.getProperty("neuralModelPath").toString();
+            const juce::File modelFile(modelPath);
+            if (modelPath.isEmpty() || !modelFile.existsAsFile() || !loadNeuralAmpModel(modelFile))
+                useAnalogueAmp();
+        }
+        else
+        {
+            useAnalogueAmp();
+        }
+
+        syncCabParameters();
+        syncPostEqParameters();
     }
 }
 
@@ -79,16 +314,77 @@ SolarisSilverlineAudioProcessor::createParameterLayout()
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID{"inputGain", 1},
-        "Input Gain",
-        juce::NormalisableRange<float>{-24.0f, 24.0f, 0.1f},
-        0.0f));
+        juce::ParameterID{solaris::ParameterIDs::inputGain, 1}, "Input Gain",
+        juce::NormalisableRange<float>{-24.0f, 24.0f, 0.1f}, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{solaris::ParameterIDs::outputGain, 1}, "Output Gain",
+        juce::NormalisableRange<float>{-24.0f, 24.0f, 0.1f}, 0.0f));
+
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{solaris::ParameterIDs::ampEnabled, 1}, "Amp Enabled", true));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID{solaris::ParameterIDs::ampChannel, 1}, "Channel",
+        juce::StringArray{"Custom", "Vintage"}, 0));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{solaris::ParameterIDs::ampVolume, 1}, "Volume",
+        juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, 4.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{solaris::ParameterIDs::ampBass, 1}, "Bass",
+        juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, 5.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{solaris::ParameterIDs::ampTreble, 1}, "Treble",
+        juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, 5.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{solaris::ParameterIDs::ampReverb, 1}, "Reverb",
+        juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, 2.0f));
+
+    auto tremoloSpeedRange = juce::NormalisableRange<float>{0.5f, 12.0f, 0.01f};
+    tremoloSpeedRange.setSkewForCentre(4.0f);
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{solaris::ParameterIDs::ampTremoloSpeed, 1}, "Tremolo Speed",
+        tremoloSpeedRange, 4.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{solaris::ParameterIDs::ampTremoloIntensity, 1}, "Tremolo Intensity",
+        juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, 0.0f));
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID{"outputGain", 1},
-        "Output Gain",
-        juce::NormalisableRange<float>{-24.0f, 24.0f, 0.1f},
-        0.0f));
+        juce::ParameterID{"cabWet", 1}, "Cab Wet",
+        juce::NormalisableRange<float>{0.0f, 100.0f, 0.1f}, 100.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{"cabMicBlend", 1}, "Cab Mic B Blend",
+        juce::NormalisableRange<float>{0.0f, 100.0f, 0.1f}, 50.0f));
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{"cabPhaseB", 1}, "Cab Mic B Phase", false));
+
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{"eqHpfBypass", 1}, "EQ HPF Bypass", false));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{"eqHpfFrequency", 1}, "EQ HPF Frequency",
+        juce::NormalisableRange<float>{20.0f, 1000.0f, 1.0f, 0.35f}, 70.0f));
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{"eqLpfBypass", 1}, "EQ LPF Bypass", false));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{"eqLpfFrequency", 1}, "EQ LPF Frequency",
+        juce::NormalisableRange<float>{1000.0f, 22000.0f, 1.0f, 0.35f}, 18000.0f));
+
+    const std::array<float, 4> defaults { 100.0f, 400.0f, 1600.0f, 6400.0f };
+    for (int i = 0; i < 4; ++i)
+    {
+        const auto number = juce::String(i + 1);
+        const auto prefix = juce::String("eqBand") + number;
+        params.push_back(std::make_unique<juce::AudioParameterBool>(
+            juce::ParameterID{prefix + "Bypass", 1}, "EQ Band " + number + " Bypass", false));
+        params.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID{prefix + "Frequency", 1}, "EQ Band " + number + " Frequency",
+            juce::NormalisableRange<float>{20.0f, 22000.0f, 1.0f, 0.3f},
+            defaults[static_cast<std::size_t>(i)]));
+        params.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID{prefix + "Gain", 1}, "EQ Band " + number + " Gain",
+            juce::NormalisableRange<float>{-18.0f, 18.0f, 0.1f}, 0.0f));
+        params.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID{prefix + "Q", 1}, "EQ Band " + number + " Q",
+            juce::NormalisableRange<float>{0.1f, 18.0f, 0.01f, 0.4f}, 0.707f));
+    }
 
     return {params.begin(), params.end()};
 }
