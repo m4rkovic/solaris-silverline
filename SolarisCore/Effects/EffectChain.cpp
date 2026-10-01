@@ -101,6 +101,14 @@ namespace solaris
         setOrder(ids);
     }
 
+    int EffectChain::latencySamples() const noexcept
+    {
+        int total = 0;
+        for (std::size_t i = 0; i < registeredCount; ++i)
+            total += registered[i]->latencySamples();
+        return total;
+    }
+
     double EffectChain::tailLengthSeconds() const noexcept
     {
         double longest = 0.0;
