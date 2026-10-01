@@ -1,33 +1,26 @@
 cmake_minimum_required(VERSION 3.24)
-
-project(SolarisSilverline
-    VERSION 0.1.0
-    DESCRIPTION "Solaris Silverline - boutique guitar amplifier suite"
-    LANGUAGES CXX
-)
-
+project(SolarisSilverline VERSION 0.2.0 DESCRIPTION "Solaris Silverline - boutique guitar amplifier suite" LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+option(SOLARIS_COPY_PLUGIN_AFTER_BUILD "Copy plugin to the system plugin directory after build" OFF)
+option(SOLARIS_ENABLE_AU "Build Audio Unit format on macOS" OFF)
 
 include(FetchContent)
-
-# JUCE is fetched automatically so contributors do not need a local JUCE install.
-FetchContent_Declare(
-    JUCE
-    GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-    GIT_TAG 8.0.10
-    GIT_SHALLOW TRUE
-)
-
+FetchContent_Declare(JUCE GIT_REPOSITORY https://github.com/juce-framework/JUCE.git GIT_TAG 8.0.10 GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(JUCE)
+
+set(SOLARIS_PLUGIN_FORMATS VST3 Standalone)
+if(APPLE AND SOLARIS_ENABLE_AU)
+    list(APPEND SOLARIS_PLUGIN_FORMATS AU)
+endif()
 
 juce_add_plugin(SolarisSilverline
     COMPANY_NAME "Solaris Audio"
     BUNDLE_ID "audio.solaris.silverline"
     PLUGIN_MANUFACTURER_CODE Sola
     PLUGIN_CODE Slvr
-    FORMATS VST3 Standalone
+    FORMATS ${SOLARIS_PLUGIN_FORMATS}
     PRODUCT_NAME "Solaris Silverline"
     COMPANY_COPYRIGHT "Copyright (c) Solaris Audio"
     IS_SYNTH FALSE
@@ -35,42 +28,12 @@ juce_add_plugin(SolarisSilverline
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
-    COPY_PLUGIN_AFTER_BUILD TRUE
+    COPY_PLUGIN_AFTER_BUILD ${SOLARIS_COPY_PLUGIN_AFTER_BUILD}
 )
 
-target_sources(SolarisSilverline
-    PRIVATE
-        Source/PluginProcessor.cpp
-        Source/PluginProcessor.h
-        Source/PluginEditor.cpp
-        Source/PluginEditor.h
-        SolarisCore/Amp/IAmpModel.h
-        SolarisCore/Amp/AmpRegistry.h
-        SolarisCore/Amp/AmpRegistry.cpp
-        Silverline/AmpModels/Silverline68Amp.h
-        Silverline/AmpModels/Silverline68Amp.cpp
-)
+juce_generate_juce_header(SolarisSilverline)
 
-target_compile_definitions(SolarisSilverline
-    PUBLIC
-        JUCE_WEB_BROWSER=0
-        JUCE_USE_CURL=0
-        JUCE_VST3_CAN_REPLACE_VST2=0
-)
-
-target_link_libraries(SolarisSilverline
-    PRIVATE
-        juce::juce_audio_utils
-        juce::juce_audio_processors
-        juce::juce_dsp
-    PUBLIC
-        juce::juce_recommended_config_flags
-        juce::juce_recommended_lto_flags
-        juce::juce_recommended_warning_flags
-)
-
-# Helps Visual Studio users keep source groups tidy.
-source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES
+set(SOLARIS_SOURCES
     Source/PluginProcessor.cpp
     Source/PluginProcessor.h
     Source/PluginEditor.cpp
@@ -78,6 +41,27 @@ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES
     SolarisCore/Amp/IAmpModel.h
     SolarisCore/Amp/AmpRegistry.h
     SolarisCore/Amp/AmpRegistry.cpp
+    SolarisCore/Cab/CabinetEngine.h
+    SolarisCore/Cab/CabinetEngine.cpp
+    SolarisCore/EQ/ParametricEQ.h
+    SolarisCore/EQ/ParametricEQ.cpp
+    SolarisCore/Tuner/TunerEngine.h
+    SolarisCore/Tuner/TunerEngine.cpp
+    SolarisCore/Presets/PresetState.h
+    SolarisCore/Presets/PresetState.cpp
     Silverline/AmpModels/Silverline68Amp.h
     Silverline/AmpModels/Silverline68Amp.cpp
 )
+
+target_sources(SolarisSilverline PRIVATE ${SOLARIS_SOURCES})
+target_include_directories(SolarisSilverline PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(SolarisSilverline PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
+if(MSVC)
+    target_compile_options(SolarisSilverline PRIVATE /permissive- /Zc:__cplusplus /utf-8)
+endif()
+target_link_libraries(SolarisSilverline PRIVATE juce::juce_audio_utils juce::juce_audio_processors juce::juce_dsp PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOLARIS_SOURCES})
+if(MSVC)
+    set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT SolarisSilverline_Standalone)
+endif()
+message(STATUS "Solaris formats: ${SOLARIS_PLUGIN_FORMATS}")
