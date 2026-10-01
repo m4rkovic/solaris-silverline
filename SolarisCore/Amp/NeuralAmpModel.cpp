@@ -31,8 +31,11 @@ namespace solaris
         maximumBlockSize = juce::jmax<std::size_t>(1u, static_cast<std::size_t>(spec.maximumBlockSize));
         activeChannels = juce::jlimit<std::size_t>(1u, maxChannels, static_cast<std::size_t>(spec.numChannels));
 
-        inputScratch.setSize(static_cast<int>(activeChannels), static_cast<int>(maximumBlockSize), false, false, true);
-        outputScratch.setSize(static_cast<int>(activeChannels), static_cast<int>(maximumBlockSize), false, false, true);
+        // NAM is mono internally, matching the reference NeuralAmpModeler plugin.
+        // The processor collapses the guitar input before this stage and we
+        // broadcast the single model output back to the host channel count.
+        inputScratch.setSize(1, static_cast<int>(maximumBlockSize), false, false, true);
+        outputScratch.setSize(1, static_cast<int>(maximumBlockSize), false, false, true);
 
         enabledMix.reset(sampleRate, 0.012);
         enabledMix.setCurrentAndTargetValue(currentParameters.enabled ? 1.0f : 0.0f);
@@ -40,17 +43,16 @@ namespace solaris
        #if SOLARIS_ENABLE_NEURAL_AUDIO
         if (hostRateChanged && models[0] != nullptr)
         {
-            for (auto& model : models)
-                model.reset();
+            models[0].reset();
+            models[1].reset();
 
             loadedForHostSampleRate = 0.0;
             loadError = "NAM needs to be reloaded for the new host sample rate.";
         }
         else
         {
-            for (auto& model : models)
-                if (model != nullptr)
-                    model->SetMaxAudioBufferSize(static_cast<int>(maximumBlockSize));
+            if (models[0] != nullptr)
+                models[0]->SetMaxAudioBufferSize(static_cast<int>(maximumBlockSize));
         }
        #endif
 
@@ -125,14 +127,11 @@ namespace solaris
             loader.SetAudioInputLevelDBu(12.0f);
 
             std::array<std::unique_ptr<NeuralAudio::NeuralModel>, maxChannels> loaded;
-            for (std::size_t channel = 0; channel < activeChannels; ++channel)
+            loaded[0].reset(loader.CreateFromFile(path, true));
+            if (loaded[0] == nullptr)
             {
-                loaded[channel].reset(loader.CreateFromFile(path, true));
-                if (loaded[channel] == nullptr)
-                {
-                    loadError = "NeuralAudio could not construct this NAM model.";
-                    return false;
-                }
+                loadError = "NeuralAudio could not construct this NAM model.";
+                return false;
             }
 
             NeuralModelMetadata metadata;
@@ -184,25 +183,23 @@ namespace solaris
         if (numSamples <= 0 || static_cast<std::size_t>(numSamples) > maximumBlockSize)
             return;
 
-        for (int channel = 0; channel < numChannels; ++channel)
-        {
-            const auto* source = buffer.getReadPointer(channel);
-            auto* modelInput = inputScratch.getWritePointer(channel);
-            auto* modelOutput = outputScratch.getWritePointer(channel);
-            juce::FloatVectorOperations::multiply(modelInput, source, inputGain, numSamples);
+        const auto* source = buffer.getReadPointer(0);
+        auto* modelInput = inputScratch.getWritePointer(0);
+        auto* modelOutput = outputScratch.getWritePointer(0);
+        juce::FloatVectorOperations::multiply(modelInput, source, inputGain, numSamples);
 
-           #if SOLARIS_ENABLE_NEURAL_AUDIO
-            models[static_cast<std::size_t>(channel)]->Process(modelInput, modelOutput, static_cast<std::size_t>(numSamples));
-           #endif
-        }
+       #if SOLARIS_ENABLE_NEURAL_AUDIO
+        models[0]->Process(modelInput, modelOutput, static_cast<std::size_t>(numSamples));
+       #endif
 
         for (int sample = 0; sample < numSamples; ++sample)
         {
             const auto mix = enabledMix.getNextValue();
+            const auto wet = outputScratch.getSample(0, sample) * outputGain;
+
             for (int channel = 0; channel < numChannels; ++channel)
             {
                 const auto dry = buffer.getSample(channel, sample);
-                const auto wet = outputScratch.getSample(channel, sample) * outputGain;
                 buffer.setSample(channel, sample, dry + (wet - dry) * mix);
             }
         }
