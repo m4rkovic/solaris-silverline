@@ -38,12 +38,31 @@ juce_add_plugin(SolarisSilverline
     COPY_PLUGIN_AFTER_BUILD TRUE
 )
 
+set(SOLARIS_UI_SOURCES
+    Source/UI/Theme.h
+    Source/UI/Controls.h
+    Source/UI/Controls.cpp
+    Source/UI/NavigationBar.h
+    Source/UI/NavigationBar.cpp
+    Source/UI/AmpPanel.h
+    Source/UI/AmpPanel.cpp
+    Source/UI/PedalBoardPanel.h
+    Source/UI/PedalBoardPanel.cpp
+    Source/UI/CabPanel.h
+    Source/UI/CabPanel.cpp
+    Source/UI/EqPanel.h
+    Source/UI/EqPanel.cpp
+    Source/UI/TunerOverlay.h
+    Source/UI/TunerOverlay.cpp
+)
+
 target_sources(SolarisSilverline
     PRIVATE
         Source/PluginProcessor.cpp
         Source/PluginProcessor.h
         Source/PluginEditor.cpp
         Source/PluginEditor.h
+        ${SOLARIS_UI_SOURCES}
         SolarisCore/Amp/IAmpModel.h
         SolarisCore/Amp/AmpRegistry.h
         SolarisCore/Amp/AmpRegistry.cpp
@@ -75,6 +94,7 @@ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES
     Source/PluginProcessor.h
     Source/PluginEditor.cpp
     Source/PluginEditor.h
+    ${SOLARIS_UI_SOURCES}
     SolarisCore/Amp/IAmpModel.h
     SolarisCore/Amp/AmpRegistry.h
     SolarisCore/Amp/AmpRegistry.cpp
