@@ -77,6 +77,7 @@ namespace solaris
         };
 
         static Validation validateWavIR(const juce::File& file);
+        void loadFactoryFallbackIfEmpty();
         juce::dsp::Convolution& convolverFor(CabinetIRSlot slot) noexcept;
         std::atomic<bool>& activeFor(CabinetIRSlot slot) noexcept;
         std::atomic<bool>& stereoFor(CabinetIRSlot slot) noexcept;
