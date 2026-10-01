@@ -89,6 +89,9 @@ private:
     void syncEffectParameters() noexcept;
     void syncPostEqParameters() noexcept;
     void cacheParameterPointers();
+    void collapseGuitarInputToMono(juce::AudioBuffer<float>& buffer) noexcept;
+    void applyOutputSafetyAndDcBlock(juce::AudioBuffer<float>& buffer) noexcept;
+    void resetOutputDcBlocker() noexcept;
     void scheduleDesiredNeuralModel();
     void completeNeuralModelLoad(std::unique_ptr<solaris::NeuralAmpModel> candidate,
                                  const solaris::NeuralLoadStatus& status);
@@ -167,6 +170,10 @@ private:
     std::atomic<bool> inputClip { false };
     std::atomic<bool> outputClip { false };
     bool prepared = false;
+
+    std::array<float, 2> outputDcPreviousInput {};
+    std::array<float, 2> outputDcPreviousOutput {};
+    float outputDcCoefficient = 0.0f;
 
     mutable juce::CriticalSection ampStateLock;
     juce::String desiredAmpBackend { "silverline68" };
