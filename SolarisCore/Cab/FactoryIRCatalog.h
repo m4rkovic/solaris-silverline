@@ -25,7 +25,7 @@ namespace solaris
                     "Factory Open Back 1x12",
                     "embedded:0xfx-cc0-open-back-1x12",
                     "CC0-1.0",
-                    false
+                    true
                 }
             };
             return catalog;
