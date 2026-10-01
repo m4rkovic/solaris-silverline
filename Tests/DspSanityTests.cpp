@@ -1,6 +1,7 @@
 #include <JuceHeader.h>
 #include "../SolarisCore/Effects/PreEffects.h"
 #include "../SolarisCore/Effects/PostEffects.h"
+#include "../SolarisCore/Effects/EffectChain.h"
 #include "../Silverline/AmpModels/Silverline68Amp.h"
 #include <atomic>
 #include <cmath>
@@ -190,6 +191,44 @@ namespace
         return isFinite(buffer) && peakMagnitude(buffer) < 32.0f;
     }
 
+    bool exerciseEffectChainState()
+    {
+        solaris::VintageCompressor compressor;
+        solaris::AsymmetricOverdrive overdrive;
+        solaris::FlexibleDistortion distortion;
+
+        solaris::EffectChain chain;
+        if (!chain.addEffect(compressor)
+            || !chain.addEffect(overdrive)
+            || !chain.addEffect(distortion))
+            return false;
+
+        juce::StringArray requestedOrder;
+        requestedOrder.add(distortion.id());
+        requestedOrder.add(compressor.id());
+        requestedOrder.add(overdrive.id());
+
+        if (!chain.setOrder(requestedOrder))
+            return false;
+
+        const auto saved = chain.createState("CHAIN");
+
+        juce::StringArray differentOrder;
+        differentOrder.add(overdrive.id());
+        differentOrder.add(distortion.id());
+        differentOrder.add(compressor.id());
+
+        if (!chain.setOrder(differentOrder))
+            return false;
+
+        chain.restoreState(saved);
+
+        return chain.size() == 3
+            && chain.at(0) == &distortion
+            && chain.at(1) == &compressor
+            && chain.at(2) == &overdrive;
+    }
+
     bool runConfiguration(double sampleRate, int blockSize, int channels)
     {
         bool ok = true;
@@ -227,7 +266,10 @@ int main()
     const std::array<int, 5> blockSizes { 32, 64, 128, 256, 512 };
     const std::array<int, 2> channelCounts { 1, 2 };
 
-    bool ok = true;
+    bool ok = exerciseEffectChainState();
+    if (!ok)
+        std::cerr << "EffectChain: ordering/state round-trip failed\n";
+
     for (const auto sampleRate : sampleRates)
         for (const auto blockSize : blockSizes)
             for (const auto channels : channelCounts)
