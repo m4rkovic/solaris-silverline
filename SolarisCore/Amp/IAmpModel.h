@@ -30,6 +30,7 @@ namespace solaris
         virtual void setParameters(const AmpParameters& parameters) noexcept = 0;
         virtual void process(juce::AudioBuffer<float>& buffer) noexcept = 0;
         virtual void reset() noexcept = 0;
+        virtual int latencySamples() const noexcept { return 0; }
         virtual double tailLengthSeconds() const noexcept { return 0.0; }
     };
 }
