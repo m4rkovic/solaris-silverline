@@ -1,4 +1,5 @@
 #include "CabinetEngine.h"
+#include "FactoryOpenBackIR.h"
 
 namespace solaris
 {
@@ -13,6 +14,67 @@ namespace solaris
         workA.setSize(preparedChannels, maximumBlockSize, false, false, true);
         workB.setSize(preparedChannels, maximumBlockSize, false, false, true);
         reset();
+        loadFactoryFallbackIfEmpty();
+    }
+
+    void CabinetEngine::loadFactoryFallbackIfEmpty()
+    {
+        {
+            const juce::ScopedLock lock(metadataLock);
+            if (statusA.active || !statusA.sourcePath.isEmpty())
+                return;
+        }
+
+        auto encoded = juce::String(factoryir::openBack1x12WavBase64)
+                           .removeCharacters("\r\n\t ");
+        juce::MemoryBlock wavData;
+        if (!wavData.fromBase64Encoding(encoded))
+        {
+            const juce::ScopedLock lock(metadataLock);
+            statusA.error = "Bundled factory cabinet IR could not be decoded.";
+            return;
+        }
+
+        juce::AudioFormatManager formats;
+        formats.registerBasicFormats();
+        auto stream = std::make_unique<juce::MemoryInputStream>(wavData, false);
+        std::unique_ptr<juce::AudioFormatReader> reader(
+            formats.createReaderFor(std::move(stream)));
+
+        if (reader == nullptr || reader->lengthInSamples <= 0 || reader->numChannels == 0)
+        {
+            const juce::ScopedLock lock(metadataLock);
+            statusA.error = "Bundled factory cabinet IR is invalid.";
+            return;
+        }
+
+        const auto channels = juce::jlimit(1, 2, static_cast<int>(reader->numChannels));
+        const auto samples = static_cast<int>(juce::jmin<juce::int64>(
+            reader->lengthInSamples, 262144));
+
+        juce::AudioBuffer<float> impulse(channels, samples);
+        impulse.clear();
+        if (!reader->read(&impulse, 0, samples, 0, true, channels > 1))
+        {
+            const juce::ScopedLock lock(metadataLock);
+            statusA.error = "Bundled factory cabinet IR could not be read.";
+            return;
+        }
+
+        requestImpulseResponseBuffer(CabinetIRSlot::micA,
+                                     std::move(impulse),
+                                     reader->sampleRate,
+                                     channels > 1,
+                                     true,
+                                     true);
+
+        setCabinetModelId("factory-open-back-1x12");
+
+        const juce::ScopedLock lock(metadataLock);
+        statusA.sourcePath = "factory://open-back-1x12";
+        statusA.error.clear();
+        statusA.active = true;
+        statusA.missing = false;
     }
 
     void CabinetEngine::reset() noexcept
