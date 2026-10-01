@@ -31,9 +31,8 @@ namespace solaris::ui
     private:
         static constexpr int pageCount = 5;
         std::array<std::unique_ptr<SolarisButton>, pageCount> pageButtons;
-        SolarisButton presetButton { "SILVER CLEAN", false };
+        SolarisButton presetButton { "INIT / SILVER CLEAN", false };
         SolarisButton tunerButton  { "TUNER", true };
-        SolarisButton settingsButton { "SETTINGS", false };
 
         Page activePage = Page::amp;
     };

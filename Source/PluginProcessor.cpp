@@ -16,6 +16,17 @@ namespace
     {
         return loadParameter(value, fallback ? 1.0f : 0.0f) >= 0.5f;
     }
+
+    float measurePeakDb(const juce::AudioBuffer<float>& buffer) noexcept
+    {
+        float peak = 0.0f;
+        const auto samples = buffer.getNumSamples();
+
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+            peak = juce::jmax(peak, buffer.getMagnitude(channel, 0, samples));
+
+        return juce::Decibels::gainToDecibels(peak, -72.0f);
+    }
 }
 
 SolarisSilverlineAudioProcessor::SolarisSilverlineAudioProcessor()
@@ -179,6 +190,11 @@ void SolarisSilverlineAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     for (auto channel = getTotalNumInputChannels(); channel < getTotalNumOutputChannels(); ++channel)
         buffer.clear(channel, 0, buffer.getNumSamples());
 
+    const auto inputPeak = measurePeakDb(buffer);
+    inputPeakDb.store(inputPeak, std::memory_order_relaxed);
+    if (inputPeak >= -0.01f)
+        inputClip.store(true, std::memory_order_relaxed);
+
     tunerEngine.pushSamples(buffer);
 
     inputGainStage.setGainDecibels(loadParameter(inputGainParameter));
@@ -200,6 +216,11 @@ void SolarisSilverlineAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
 
     if (tunerMuted.load(std::memory_order_relaxed))
         buffer.clear();
+
+    const auto outputPeak = measurePeakDb(buffer);
+    outputPeakDb.store(outputPeak, std::memory_order_relaxed);
+    if (outputPeak >= -0.01f)
+        outputClip.store(true, std::memory_order_relaxed);
 }
 
 bool SolarisSilverlineAudioProcessor::loadNeuralAmpModel(const juce::File& modelFile)

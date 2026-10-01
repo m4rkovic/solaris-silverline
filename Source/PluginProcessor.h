@@ -51,6 +51,20 @@ public:
     void setTunerMuted(bool shouldMute) noexcept { tunerMuted.store(shouldMute, std::memory_order_relaxed); }
     bool isTunerMuted() const noexcept { return tunerMuted.load(std::memory_order_relaxed); }
 
+    float getInputPeakDb() const noexcept { return inputPeakDb.load(std::memory_order_relaxed); }
+    float getOutputPeakDb() const noexcept { return outputPeakDb.load(std::memory_order_relaxed); }
+    bool consumeInputClip() noexcept { return inputClip.exchange(false, std::memory_order_relaxed); }
+    bool consumeOutputClip() noexcept { return outputClip.exchange(false, std::memory_order_relaxed); }
+
+    bool isNeuralAudioAvailable() const noexcept
+    {
+       #if SOLARIS_ENABLE_NEURAL_AUDIO
+        return true;
+       #else
+        return false;
+       #endif
+    }
+
     // Explicit model changes run off the audio callback. Model construction/loading
     // happens first; only the final unique_ptr swap is protected by JUCE's callback lock.
     bool loadNeuralAmpModel(const juce::File& modelFile);
@@ -106,6 +120,10 @@ private:
 
     solaris::AmpPrepareSpec lastAmpSpec {};
     std::atomic<bool> tunerMuted { false };
+    std::atomic<float> inputPeakDb { -72.0f };
+    std::atomic<float> outputPeakDb { -72.0f };
+    std::atomic<bool> inputClip { false };
+    std::atomic<bool> outputClip { false };
     bool prepared = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SolarisSilverlineAudioProcessor)

@@ -75,6 +75,8 @@ set(SOLARIS_SOURCES
     Source/UI/Controls.h
     Source/UI/NavigationBar.cpp
     Source/UI/NavigationBar.h
+    Source/UI/GlobalStrip.cpp
+    Source/UI/GlobalStrip.h
     Source/UI/AmpPanel.cpp
     Source/UI/AmpPanel.h
     Source/UI/CabPanel.cpp
