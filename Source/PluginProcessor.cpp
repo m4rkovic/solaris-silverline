@@ -182,7 +182,8 @@ void SolarisSilverlineAudioProcessor::prepareToPlay(double sampleRate, int sampl
     // Disabled pedals are true zero-latency bypasses. Do not make the clean
     // monitoring path inherit the theoretical latency of every optional
     // oversampled pedal in the rig.
-    setLatencySamples(cabinetEngine.getLatencySamples());
+    setLatencySamples(cabinetEngine.getLatencySamples()
+                      + ampRegistry.latencySamples());
     selectedInputChannel = 0;
     prepared = true;
     scheduleDesiredNeuralModel();
@@ -469,6 +470,9 @@ void SolarisSilverlineAudioProcessor::completeNeuralModelLoad(std::unique_ptr<so
         const juce::ScopedLock hostCallbackGuard(getCallbackLock());
         ampRegistry.swapSelected(replacement);
     }
+
+    setLatencySamples(cabinetEngine.getLatencySamples()
+                      + ampRegistry.latencySamples());
 }
 
 bool SolarisSilverlineAudioProcessor::useAnalogueAmp()
@@ -485,6 +489,9 @@ bool SolarisSilverlineAudioProcessor::useAnalogueAmp()
         const juce::ScopedLock hostCallbackGuard(getCallbackLock());
         ampRegistry.swapSelected(replacement);
     }
+
+    setLatencySamples(cabinetEngine.getLatencySamples()
+                      + ampRegistry.latencySamples());
 
     {
         const juce::ScopedLock lock(ampStateLock);
