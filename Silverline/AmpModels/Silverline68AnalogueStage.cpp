@@ -56,7 +56,9 @@ namespace solaris
 
         bassBand.prepare(oversampledRate, 220.0f);
         trebleBand.prepare(oversampledRate, 2600.0f);
-        antiFizz.prepare(oversampledRate, 12500.0f);
+        lowTightener.prepare(oversampledRate, 118.0f);
+        antiFizz.prepare(oversampledRate, 13800.0f);
+        antiFizz2.prepare(oversampledRate, 18500.0f);
         dcTracker.prepare(oversampledRate, 7.0f);
 
         constexpr double smoothingSeconds = 0.025;
@@ -112,8 +114,8 @@ namespace solaris
 
             // Custom is a little tighter and more eager to break up; Vintage retains
             // more headroom and a softer top. These are musical voicings, not a circuit clone.
-            const auto driveDb = lerp(-1.0f, 25.0f, volumeValue)
-                               + lerp(2.0f, -1.0f, vintage);
+            const auto driveDb = lerp(-2.0f, 22.5f, volumeValue)
+                               + lerp(1.6f, -0.8f, vintage);
             const auto drive = juce::Decibels::decibelsToGain(driveDb);
             const auto bias = lerp(0.085f, 0.045f, vintage);
             const auto sagAmount = lerp(0.20f, 0.13f, vintage) * (0.35f + 0.65f * volumeValue);
@@ -122,9 +124,21 @@ namespace solaris
             {
                 auto x = oversampledBlock.getSample(channel, sample);
 
-                // First triode-like stage: asymmetric, smooth and deliberately conservative.
-                const auto driven = x * drive;
-                auto preamp = std::tanh(driven + bias) - std::tanh(bias);
+                // A small amount of bass is withheld before the nonlinear stage, increasingly
+                // at higher Volume settings. This keeps palm-muted lows firm without making the
+                // final tone stack thin.
+                const auto lowForDrive = lowTightener.process(channel, x);
+                const auto tightening = lerp(0.15f, 0.07f, vintage)
+                                      * (0.30f + 0.70f * volumeValue);
+                const auto driveInput = x - lowForDrive * tightening;
+
+                // First triode-like stage: asymmetric soft clipping. A modest linear contribution
+                // keeps pick attack and guitar-volume cleanup from collapsing into a flat waveform.
+                const auto driven = driveInput * drive;
+                const auto clipped = std::tanh(driven + bias) - std::tanh(bias);
+                const auto cleanBlend = lerp(0.15f, 0.045f, volumeValue);
+                auto preamp = clipped * (1.0f - cleanBlend)
+                            + driveInput * std::sqrt(drive) * cleanBlend;
 
                 // Remove the tiny DC component introduced by asymmetric clipping.
                 const auto dc = dcTracker.process(channel, preamp);
@@ -153,12 +167,16 @@ namespace solaris
                 state.sagEnvelope += envelopeCoeff * (magnitude - state.sagEnvelope);
                 const auto sagGain = 1.0f / (1.0f + sagAmount * state.sagEnvelope);
 
-                const auto powerDrive = lerp(1.05f, 1.75f, volumeValue);
-                auto powered = std::tanh(shaped * sagGain * powerDrive);
+                const auto powerDrive = lerp(0.95f, 1.58f, volumeValue);
+                const auto powerInput = shaped * sagGain * powerDrive;
+                const auto normaliser = std::atan(1.65f * powerDrive);
+                auto powered = std::atan(powerInput * 1.65f)
+                             / juce::jmax(0.25f, normaliser);
 
-                // Oversampled low-pass is intentional: it removes generated ultrasonic
-                // energy before downsampling instead of leaving a brittle digital edge.
+                // Two gentle poles tame generated ultrasonics without shaving off the glassy
+                // upper guitar harmonics. The oversampler then handles the final decimation.
                 powered = antiFizz.process(channel, powered);
+                powered = antiFizz2.process(channel, powered);
 
                 const auto levelComp = lerp(0.92f, 0.53f, volumeValue);
                 oversampledBlock.setSample(channel, sample,
@@ -176,7 +194,9 @@ namespace solaris
 
         bassBand.reset();
         trebleBand.reset();
+        lowTightener.reset();
         antiFizz.reset();
+        antiFizz2.reset();
         dcTracker.reset();
         channelState.fill(ChannelState{});
     }
