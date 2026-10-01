@@ -41,6 +41,7 @@ namespace solaris
 
         IAmpModel* current() noexcept { return selected.get(); }
         const IAmpModel* current() const noexcept { return selected.get(); }
+        int latencySamples() const noexcept;
         double tailLengthSeconds() const noexcept;
 
         const std::vector<Entry>& entries() const noexcept { return factories; }
