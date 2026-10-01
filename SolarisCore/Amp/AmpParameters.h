@@ -21,7 +21,7 @@ namespace solaris
         float volume = 0.45f;
         float bass = 0.5f;
         float treble = 0.55f;
-        float reverb = 0.2f;
+        float reverb = 0.0f;
         float tremoloSpeedHz = 4.0f;
         float tremoloIntensity = 0.0f;
 
