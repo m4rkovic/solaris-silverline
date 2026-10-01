@@ -75,7 +75,7 @@ namespace solaris::ui
                 ? "Load Mic A Impulse Response"
                 : "Load Mic B Impulse Response",
             juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
-            "*.wav;*.aif;*.aiff;*.flac");
+            "*.wav");
 
         auto safeThis = juce::Component::SafePointer<CabPanel>(this);
         irChooser->launchAsync(
@@ -89,14 +89,8 @@ namespace solaris::ui
                     if (!file.existsAsFile())
                         return;
 
-                    juce::AudioFormatManager formats;
-                    formats.registerBasicFormats();
-                    std::unique_ptr<juce::AudioFormatReader> reader(
-                        formats.createReaderFor(file));
-
-                    const auto stereo = reader != nullptr && reader->numChannels > 1;
                     self->processor.getCabinetEngine().requestImpulseResponseFromFile(
-                        slot, file, stereo);
+                        slot, file, false);
                     self->refreshIrStatus();
                 }
             });
