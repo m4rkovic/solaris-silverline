@@ -179,9 +179,11 @@ void SolarisSilverlineAudioProcessor::prepareToPlay(double sampleRate, int sampl
     outputGainStage.setRampDurationSeconds(0.020);
     outputGainStage.setGainDecibels(loadParameter(outputGainParameter));
 
-    setLatencySamples(cabinetEngine.getLatencySamples()
-                      + preFxChain.latencySamples()
-                      + postFxChain.latencySamples());
+    // Disabled pedals are true zero-latency bypasses. Do not make the clean
+    // monitoring path inherit the theoretical latency of every optional
+    // oversampled pedal in the rig.
+    setLatencySamples(cabinetEngine.getLatencySamples());
+    selectedInputChannel = 0;
     prepared = true;
     scheduleDesiredNeuralModel();
 }
@@ -210,6 +212,48 @@ bool SolarisSilverlineAudioProcessor::isBusesLayoutSupported(const BusesLayout& 
     return output == layouts.getMainInputChannelSet();
 }
 #endif
+
+void SolarisSilverlineAudioProcessor::routeGuitarInput(juce::AudioBuffer<float>& buffer) noexcept
+{
+    const auto numSamples = buffer.getNumSamples();
+    const auto numInputs = juce::jmin(getTotalNumInputChannels(), buffer.getNumChannels());
+    if (numSamples <= 0 || numInputs <= 0)
+        return;
+
+    selectedInputChannel = juce::jlimit(0, numInputs - 1, selectedInputChannel);
+
+    auto bestChannel = selectedInputChannel;
+    auto bestPeak = buffer.getMagnitude(bestChannel, 0, numSamples);
+    const auto currentPeak = bestPeak;
+
+    for (int channel = 0; channel < numInputs; ++channel)
+    {
+        const auto peak = buffer.getMagnitude(channel, 0, numSamples);
+        if (peak > bestPeak)
+        {
+            bestPeak = peak;
+            bestChannel = channel;
+        }
+    }
+
+    // Guitar interfaces commonly expose a stereo pair even when only one jack
+    // is in use. Keep following the active jack, but use hysteresis so idle
+    // interface noise cannot make us jump between channels every block.
+    if (bestChannel != selectedInputChannel
+        && bestPeak > 1.0e-4f
+        && bestPeak > currentPeak * 2.0f)
+    {
+        selectedInputChannel = bestChannel;
+    }
+
+    if (selectedInputChannel != 0)
+        buffer.copyFrom(0, 0, buffer, selectedInputChannel, 0, numSamples);
+
+    // The guitar/amp path is mono, matching the reference NAM plugin. Broadcast
+    // that mono source before processing so post effects may create stereo width.
+    for (int channel = 1; channel < buffer.getNumChannels(); ++channel)
+        buffer.copyFrom(channel, 0, buffer, 0, 0, numSamples);
+}
 
 solaris::AmpParameters SolarisSilverlineAudioProcessor::readAmpParameters() const noexcept
 {
@@ -319,6 +363,8 @@ void SolarisSilverlineAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
 
     for (auto channel = getTotalNumInputChannels(); channel < getTotalNumOutputChannels(); ++channel)
         buffer.clear(channel, 0, buffer.getNumSamples());
+
+    routeGuitarInput(buffer);
 
     const auto inputPeak = measurePeakDb(buffer);
     inputPeakDb.store(inputPeak, std::memory_order_relaxed);
@@ -599,7 +645,7 @@ SolarisSilverlineAudioProcessor::createParameterLayout()
         juce::NormalisableRange<float>{-24.0f, 24.0f, 0.1f}, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID{solaris::ParameterIDs::outputGain, 1}, "Output Gain",
-        juce::NormalisableRange<float>{-24.0f, 24.0f, 0.1f}, 0.0f));
+        juce::NormalisableRange<float>{-24.0f, 24.0f, 0.1f}, -3.0f));
 
     params.push_back(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID{solaris::ParameterIDs::ampEnabled, 1}, "Amp Enabled", true));
@@ -617,7 +663,7 @@ SolarisSilverlineAudioProcessor::createParameterLayout()
         juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, 5.5f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID{solaris::ParameterIDs::ampReverb, 1}, "Reverb",
-        juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, 2.0f));
+        juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, 0.0f));
 
     auto tremoloSpeedRange = juce::NormalisableRange<float>{0.5f, 12.0f, 0.01f};
     tremoloSpeedRange.setSkewForCentre(4.0f);
