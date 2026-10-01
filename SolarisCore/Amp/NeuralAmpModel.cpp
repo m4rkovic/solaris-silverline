@@ -2,6 +2,11 @@
 
 #if SOLARIS_ENABLE_NEURAL_AUDIO
 #include <NeuralAudio/NeuralModel.h>
+#else
+// Keeps the private unique_ptr storage well-formed in lightweight builds where
+// the NeuralAudio dependency is intentionally not fetched. No instance of this
+// stub is ever created.
+namespace NeuralAudio { class NeuralModel {}; }
 #endif
 
 #include <cmath>

@@ -28,9 +28,9 @@ namespace solaris
         TunerSnapshot getSnapshot() const noexcept;
 
     private:
-        static constexpr int fifoCapacity=32768;
-        static constexpr int analysisSize=4096;
-        static constexpr int hopSize=1024;
+        static constexpr int fifoCapacity=16384;
+        static constexpr int analysisSize=2048;
+        static constexpr int hopSize=512;
         static constexpr int maxLagStorage=analysisSize/2;
         void run() override;
         void drainFifo();

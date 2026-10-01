@@ -21,7 +21,7 @@ namespace solaris
         historyWrite=historyValid=freshAnalysisSamples=frequencyHistoryCount=frequencyHistoryWrite=invalidFrames=0;
         decimationCount=0; decimationAccumulator=0;
         const auto safe=juce::jmax(1.0,hostSampleRate);
-        decimationFactor=juce::jmax(1,static_cast<int>(std::ceil(safe/48000.0)));
+        decimationFactor=juce::jmax(1,static_cast<int>(std::ceil(safe/12000.0)));
         analysisSampleRate=safe/static_cast<double>(decimationFactor);
         publishInvalid(); startThread();
     }

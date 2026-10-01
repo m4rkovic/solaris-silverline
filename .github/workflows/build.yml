@@ -8,6 +8,13 @@ on:
 jobs:
   linux-vst3:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        neural: [ON, OFF]
+
+    name: linux-vst3 / NeuralAudio ${{ matrix.neural }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -25,7 +32,10 @@ jobs:
             libxrandr-dev
 
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DSOLARIS_ENABLE_NEURAL_AUDIO=${{ matrix.neural }}
 
       - name: Build VST3
         run: cmake --build build --config Release --target SolarisSilverline_VST3 --parallel 2
