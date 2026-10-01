@@ -25,6 +25,7 @@ namespace solaris
             return index < orderCount ? order[index] : nullptr;
         }
 
+        int latencySamples() const noexcept;
         double tailLengthSeconds() const noexcept;
 
     private:
