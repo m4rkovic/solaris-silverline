@@ -37,5 +37,8 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DSOLARIS_ENABLE_NEURAL_AUDIO=${{ matrix.neural }}
 
-      - name: Build VST3
-        run: cmake --build build --config Release --target SolarisSilverline_VST3 --parallel 2
+      - name: Build VST3 and DSP tests
+        run: cmake --build build --config Release --target SolarisSilverline_VST3 SolarisDspTests --parallel 2
+
+      - name: Run DSP sanity tests
+        run: ctest --test-dir build -C Release --output-on-failure

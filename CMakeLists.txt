@@ -13,6 +13,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(SOLARIS_COPY_PLUGIN_AFTER_BUILD "Copy plugin to the system plugin directory after build" OFF)
 option(SOLARIS_ENABLE_AU "Build Audio Unit format on macOS" OFF)
 option(SOLARIS_ENABLE_NEURAL_AUDIO "Build NeuralAudio/NAM backend" ON)
+option(SOLARIS_BUILD_TESTS "Build Solaris DSP sanity tests" ON)
 
 include(FetchContent)
 
@@ -86,6 +87,15 @@ set(SOLARIS_SOURCES
     Source/UI/TunerOverlay.cpp
     Source/UI/TunerOverlay.h
     SolarisCore/DSP/IAudioStage.h
+    SolarisCore/Effects/IEffect.h
+    SolarisCore/Effects/EffectDSP.h
+    SolarisCore/Effects/EffectChain.h
+    SolarisCore/Effects/EffectChain.cpp
+    SolarisCore/Effects/OversampledEffect.h
+    SolarisCore/Effects/PreEffects.h
+    SolarisCore/Effects/PreEffects.cpp
+    SolarisCore/Effects/PostEffects.h
+    SolarisCore/Effects/PostEffects.cpp
     SolarisCore/Amp/AmpParameters.h
     SolarisCore/Amp/INonlinearAmpStage.h
     SolarisCore/Amp/IAmpModel.h
@@ -148,3 +158,40 @@ endif()
 
 message(STATUS "Solaris formats: ${SOLARIS_PLUGIN_FORMATS}")
 message(STATUS "Solaris NeuralAudio backend: ${SOLARIS_ENABLE_NEURAL_AUDIO}")
+
+
+if(SOLARIS_BUILD_TESTS)
+    enable_testing()
+
+    juce_add_console_app(SolarisDspTests
+        PRODUCT_NAME "Solaris DSP Tests"
+    )
+    juce_generate_juce_header(SolarisDspTests)
+
+    target_sources(SolarisDspTests
+        PRIVATE
+            Tests/DspSanityTests.cpp
+            SolarisCore/Effects/EffectChain.cpp
+            SolarisCore/Effects/PreEffects.cpp
+            SolarisCore/Effects/PostEffects.cpp
+            Silverline/AmpModels/Silverline68AnalogueStage.cpp
+            Silverline/AmpModels/Silverline68Amp.cpp
+    )
+
+    target_include_directories(SolarisDspTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_definitions(SolarisDspTests
+        PRIVATE
+            JUCE_WEB_BROWSER=0
+            JUCE_USE_CURL=0
+    )
+    target_link_libraries(SolarisDspTests
+        PRIVATE
+            juce::juce_audio_basics
+            juce::juce_dsp
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags
+    )
+
+    add_test(NAME SolarisDspSanity COMMAND SolarisDspTests)
+endif()
