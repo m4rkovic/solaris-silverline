@@ -14,14 +14,20 @@ namespace solaris
         bool stereo = false;
     };
 
-    // Intentionally empty until every bundled IR has explicit redistribution rights.
-    // This gives the release pack a stable manifest shape without shipping mystery audio.
     class FactoryIRCatalog
     {
     public:
         static const std::vector<FactoryIRDescriptor>& entries()
         {
-            static const std::vector<FactoryIRDescriptor> catalog;
+            static const std::vector<FactoryIRDescriptor> catalog {
+                {
+                    "factory-open-back-1x12",
+                    "Factory Open Back 1x12",
+                    "embedded:0xfx-cc0-open-back-1x12",
+                    "CC0-1.0",
+                    false
+                }
+            };
             return catalog;
         }
     };
