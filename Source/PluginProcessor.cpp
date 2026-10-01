@@ -138,6 +138,80 @@ void SolarisSilverlineAudioProcessor::cacheParameterPointers()
     }
 }
 
+void SolarisSilverlineAudioProcessor::collapseGuitarInputToMono(juce::AudioBuffer<float>& buffer) noexcept
+{
+    if (buffer.getNumChannels() < 2 || buffer.getNumSamples() <= 0)
+        return;
+
+   #if JucePlugin_Build_Standalone
+    // The official NAM standalone treats the guitar path as mono and catches
+    // whichever physical input is actually carrying the instrument. Choosing
+    // the hotter block avoids summing an unused interface input full of noise
+    // and preserves level when the guitar is plugged into Input 1 or Input 2.
+    const auto leftPeak = buffer.getMagnitude(0, 0, buffer.getNumSamples());
+    const auto rightPeak = buffer.getMagnitude(1, 0, buffer.getNumSamples());
+    const auto sourceChannel = rightPeak > leftPeak ? 1 : 0;
+
+    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+    {
+        const auto mono = buffer.getSample(sourceChannel, sample);
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+            buffer.setSample(channel, sample, mono);
+    }
+   #else
+    // In a DAW a stereo source is collapsed conservatively, matching NAM's
+    // mono-internal processing model without doubling correlated inputs.
+    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+    {
+        const auto mono = 0.5f * (buffer.getSample(0, sample)
+                                + buffer.getSample(1, sample));
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+            buffer.setSample(channel, sample, mono);
+    }
+   #endif
+}
+
+void SolarisSilverlineAudioProcessor::resetOutputDcBlocker() noexcept
+{
+    outputDcPreviousInput.fill(0.0f);
+    outputDcPreviousOutput.fill(0.0f);
+}
+
+void SolarisSilverlineAudioProcessor::applyOutputSafetyAndDcBlock(juce::AudioBuffer<float>& buffer) noexcept
+{
+    const auto channels = juce::jmin(2, buffer.getNumChannels());
+
+    for (int channel = 0; channel < channels; ++channel)
+    {
+        auto previousInput = outputDcPreviousInput[static_cast<std::size_t>(channel)];
+        auto previousOutput = outputDcPreviousOutput[static_cast<std::size_t>(channel)];
+        auto* samples = buffer.getWritePointer(channel);
+
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        {
+            const auto x = samples[sample];
+            auto y = x - previousInput + outputDcCoefficient * previousOutput;
+            previousInput = x;
+
+            if (!std::isfinite(y))
+                y = 0.0f;
+
+           #if JucePlugin_Build_Standalone
+            // A hardware output cannot represent samples beyond full scale.
+            // NAM's standalone follows the same principle: protect the device
+            // output instead of letting runaway DSP become digital crackle.
+            y = juce::jlimit(-0.999f, 0.999f, y);
+           #endif
+
+            previousOutput = y;
+            samples[sample] = y;
+        }
+
+        outputDcPreviousInput[static_cast<std::size_t>(channel)] = previousInput;
+        outputDcPreviousOutput[static_cast<std::size_t>(channel)] = previousOutput;
+    }
+}
+
 void SolarisSilverlineAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     const auto channels = static_cast<juce::uint32>(getTotalNumOutputChannels());
@@ -179,9 +253,15 @@ void SolarisSilverlineAudioProcessor::prepareToPlay(double sampleRate, int sampl
     outputGainStage.setRampDurationSeconds(0.020);
     outputGainStage.setGainDecibels(loadParameter(outputGainParameter));
 
+    // Keep the baseline guitar path genuinely low-latency. Fully bypassed
+    // effects are now true bypass and contribute no delay.
     setLatencySamples(cabinetEngine.getLatencySamples()
                       + preFxChain.latencySamples()
                       + postFxChain.latencySamples());
+
+    outputDcCoefficient = static_cast<float>(
+        std::exp(-2.0 * juce::MathConstants<double>::pi * 5.0 / juce::jmax(1.0, sampleRate)));
+    resetOutputDcBlocker();
     prepared = true;
     scheduleDesiredNeuralModel();
 }
@@ -198,6 +278,7 @@ void SolarisSilverlineAudioProcessor::releaseResources()
     postFxChain.reset();
     postEq.reset();
     outputGainStage.reset();
+    resetOutputDcBlocker();
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -320,6 +401,8 @@ void SolarisSilverlineAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     for (auto channel = getTotalNumInputChannels(); channel < getTotalNumOutputChannels(); ++channel)
         buffer.clear(channel, 0, buffer.getNumSamples());
 
+    collapseGuitarInputToMono(buffer);
+
     const auto inputPeak = measurePeakDb(buffer);
     inputPeakDb.store(inputPeak, std::memory_order_relaxed);
     if (inputPeak >= -0.01f)
@@ -344,6 +427,7 @@ void SolarisSilverlineAudioProcessor::processBlock(juce::AudioBuffer<float>& buf
     postFxChain.process(buffer);
     postEq.process(buffer);
     outputGainStage.process(context);
+    applyOutputSafetyAndDcBlock(buffer);
 
     if (tunerMuted.load(std::memory_order_relaxed))
         buffer.clear();
@@ -599,7 +683,7 @@ SolarisSilverlineAudioProcessor::createParameterLayout()
         juce::NormalisableRange<float>{-24.0f, 24.0f, 0.1f}, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID{solaris::ParameterIDs::outputGain, 1}, "Output Gain",
-        juce::NormalisableRange<float>{-24.0f, 24.0f, 0.1f}, 0.0f));
+        juce::NormalisableRange<float>{-24.0f, 24.0f, 0.1f}, -6.0f));
 
     params.push_back(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID{solaris::ParameterIDs::ampEnabled, 1}, "Amp Enabled", true));
@@ -608,7 +692,7 @@ SolarisSilverlineAudioProcessor::createParameterLayout()
         juce::StringArray{"Custom", "Vintage"}, 0));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID{solaris::ParameterIDs::ampVolume, 1}, "Volume",
-        juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, 4.5f));
+        juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, 3.5f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID{solaris::ParameterIDs::ampBass, 1}, "Bass",
         juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, 5.0f));
@@ -617,7 +701,7 @@ SolarisSilverlineAudioProcessor::createParameterLayout()
         juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, 5.5f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID{solaris::ParameterIDs::ampReverb, 1}, "Reverb",
-        juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, 2.0f));
+        juce::NormalisableRange<float>{0.0f, 10.0f, 0.01f}, 0.0f));
 
     auto tremoloSpeedRange = juce::NormalisableRange<float>{0.5f, 12.0f, 0.01f};
     tremoloSpeedRange.setSkewForCentre(4.0f);
