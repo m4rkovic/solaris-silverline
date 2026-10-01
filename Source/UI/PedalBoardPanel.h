@@ -34,7 +34,7 @@ namespace solaris::ui
         juce::String family;
         juce::Colour finish;
 
-        SolarisButton bypassButton { "OFF" };
+        SolarisButton bypassButton { "ON" };
         std::array<std::unique_ptr<SolarisKnob>, 3> knobs;
         std::unique_ptr<ButtonAttachment> bypassAttachment;
         std::array<std::unique_ptr<SliderAttachment>, 3> knobAttachments;

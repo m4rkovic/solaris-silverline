@@ -18,6 +18,7 @@ namespace solaris::ui
     {
         bypassButton.setClickingTogglesState(true);
         bypassButton.setTooltip("Enable or bypass " + name);
+        bypassButton.onStateChange = [this] { repaint(); };
         addAndMakeVisible(bypassButton);
         bypassAttachment = std::make_unique<ButtonAttachment>(state, enabledParameter, bypassButton);
 
