@@ -1,0 +1,6 @@
+Solaris Silverline starter repository
+
+Copyright (c) 2026.
+
+No public distribution license has been selected yet.
+Replace this file with the intended license before publishing the repository publicly.

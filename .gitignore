@@ -1,0 +1,37 @@
+# CMake / build
+build/
+cmake-build-*/
+out/
+
+# Visual Studio
+.vs/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+
+# Compiled output
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.lib
+*.exp
+*.obj
+*.tlog
+*.lastbuildstate
+
+# Plugin binaries
+*.vst3
+*.component
+*.aaxplugin
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local assets / captures that should not be committed accidentally
+LocalCaptures/
+LocalIRs/
